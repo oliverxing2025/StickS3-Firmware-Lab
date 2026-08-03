@@ -7,7 +7,7 @@
   </p>
   <p>
     <a href="#overview">Overview</a> ·
-    <a href="#whats-new-in-v020">v0.2.0</a> ·
+    <a href="#whats-new-in-v020-beta">v0.2.0 Beta</a> ·
     <a href="#sticks3-source-project-compatibility">Compatibility</a> ·
     <a href="#complete-controls">Controls</a> ·
     <a href="#installation">Install</a> ·
@@ -19,16 +19,16 @@
     <img alt="Platform: macOS 14+" src="https://img.shields.io/badge/platform-macOS%2014%2B-111111">
     <img alt="Architecture: Apple Silicon" src="https://img.shields.io/badge/architecture-Apple%20Silicon-5A5A5A">
     <img alt="Swift: 6" src="https://img.shields.io/badge/Swift-6-F05138">
-    <img alt="Version: 0.2.0" src="https://img.shields.io/badge/version-0.2.0-2F80ED">
+    <img alt="Version: 0.2.0 Beta" src="https://img.shields.io/badge/version-0.2.0--beta-2F80ED">
     <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
 </div>
 
-## What's new in v0.2.0
+## What's new in v0.2.0 Beta
 
-This private test build was updated on August 3, 2026. The installer will be
-published through GitHub Releases after signing, notarization, and the public
-release gates are complete.
+This open-source beta was published on August 3, 2026. Source code and an
+unnotarized macOS Apple Silicon build are provided through GitHub for community
+testing, feedback, and improvement.
 
 - **Source-project simulation:** ESP-IDF, PlatformIO, and Arduino source
   projects have completed end-to-end build, display, button, and BMI270 tests.
@@ -135,13 +135,16 @@ an internal execution backend for adapted source-build outputs.
 
 ### Release build
 
-Repository members can download
-`Stick-S3-Virtual-Device-v0.2.0-macOS-arm64.zip` from
+Anyone can download
+`Stick-S3-Virtual-Device-v0.2.0-beta-macOS-arm64.zip` from
 [GitHub Releases](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases).
+Verify the SHA-256 value shown on the release page before opening it.
 
 1. Extract the ZIP on an Apple Silicon Mac.
 2. Drag **Stick S3 虚拟设备.app** into **Applications**.
-3. Open the application.
+3. Control-click the app, select **Open**, then confirm **Open** in the dialog.
+4. If Gatekeeper still blocks it, open **System Settings → Privacy & Security**,
+   confirm the app source, and choose **Open Anyway**.
 
 For source projects, use the corresponding official download button in
 **Firmware Manager**:
@@ -151,9 +154,12 @@ For source projects, use the corresponding official download button in
 
 Return to the app and select **Check Again** after installation.
 
-The first private test build uses ad-hoc signing and is not yet notarized with
-Apple. External distribution should use Developer ID signing, Apple
-notarization, and Gatekeeper verification.
+> [!WARNING]
+> This open-source beta uses ad-hoc signing and does not have a Developer ID
+> signature or Apple notarization. macOS will show a Gatekeeper warning. Only
+> download it from this repository's official Release page and verify its
+> SHA-256 value. Users who prefer not to bypass that warning should build from
+> source or wait for a future signed release.
 
 ### Run from source
 

@@ -3,7 +3,15 @@ set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
 cd "$PROJECT_DIR"
-swift build -c release
+
+# Keep developer and synchronized-workspace paths out of public Mach-O files.
+# C/C++ __FILE__ strings otherwise retain the absolute checkout directory even
+# in an optimized release build.
+swift build -c release \
+    -Xcc "-ffile-prefix-map=$PROJECT_DIR=." \
+    -Xcc "-fdebug-prefix-map=$PROJECT_DIR=." \
+    -Xswiftc -file-prefix-map \
+    -Xswiftc "$PROJECT_DIR=."
 
 APP_DIR="$PROJECT_DIR/build/Stick S3 虚拟设备.app"
 mkdir -p "$PROJECT_DIR/build"
@@ -35,6 +43,11 @@ cp "$PROJECT_DIR/NOTICE" "$STAGED_APP/Contents/Resources/Licenses/NOTICE"
 cp "$PROJECT_DIR/THIRD_PARTY_NOTICES.md" "$STAGED_APP/Contents/Resources/Licenses/THIRD_PARTY_NOTICES.md"
 cp -R "$PROJECT_DIR/Vendor/Licenses/." "$STAGED_APP/Contents/Resources/Licenses/"
 chmod 755 "$STAGED_APP/Contents/MacOS/StickS3Simulator"
+
+# Remove local object-file records after prefix mapping and before signing.
+# These records are not needed at runtime and otherwise expose the checkout
+# path through the final release executable.
+strip -S -x "$STAGED_APP/Contents/MacOS/StickS3Simulator"
 
 "$PROJECT_DIR/scripts/bundle-qemu.sh" "$STAGED_APP/Contents/Resources/Emulation"
 

@@ -7,7 +7,7 @@
   </p>
   <p>
     <a href="#项目概览">项目概览</a> ·
-    <a href="#v020-更新">v0.2.0</a> ·
+    <a href="#v020-beta-更新">v0.2.0 Beta</a> ·
     <a href="#sticks3-源码工程兼容">固件兼容</a> ·
     <a href="#完整控制">完整控制</a> ·
     <a href="#安装">安装</a> ·
@@ -19,15 +19,15 @@
     <img alt="平台：macOS 14+" src="https://img.shields.io/badge/platform-macOS%2014%2B-111111">
     <img alt="架构：Apple Silicon" src="https://img.shields.io/badge/architecture-Apple%20Silicon-5A5A5A">
     <img alt="Swift：6" src="https://img.shields.io/badge/Swift-6-F05138">
-    <img alt="版本：0.2.0" src="https://img.shields.io/badge/version-0.2.0-2F80ED">
+    <img alt="版本：0.2.0 Beta" src="https://img.shields.io/badge/version-0.2.0--beta-2F80ED">
     <img alt="模式：本地优先" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
 </div>
 
-## v0.2.0 更新
+## v0.2.0 Beta 更新
 
-当前私有测试版更新于 2026 年 8 月 3 日。完成正式签名、公证和
-发布门禁后，安装包将在 GitHub Releases 提供。
+开源测试版发布于 2026 年 8 月 3 日。源码与未公证的 macOS Apple Silicon
+安装包通过 GitHub 提供，供社区测试、反馈和共同改进。
 
 - **源码工程模拟：**已完成 ESP-IDF、PlatformIO 和 Arduino 源码工程的构建、画面、按键与 BMI270 端到端验证。
 - **整机姿态模拟：**正放、左转 90°、右转 90°、反放会同时旋转机身、屏幕和实体按键。
@@ -119,13 +119,16 @@ Stick S3 虚拟设备是用于导入、运行和操作 StickS3 固件项目的�
 
 ### 安装发布版
 
-仓库成员可从
+所有用户均可从
 [GitHub Releases](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases)
-下载 `Stick-S3-Virtual-Device-v0.2.0-macOS-arm64.zip`。
+下载 `Stick-S3-Virtual-Device-v0.2.0-beta-macOS-arm64.zip`，并核对发布页提供的
+SHA-256 校验值。
 
 1. 在 Apple Silicon Mac 上解压 ZIP。
 2. 将“Stick S3 虚拟设备.app”拖入“应用程序”。
-3. 打开应用。
+3. 按住 Control 键点按应用图标，选择“打开”，再在确认窗口中选择“打开”。
+4. 如果仍被 Gatekeeper 阻止，请前往“系统设置 → 隐私与安全”，确认应用来源后
+   选择“仍要打开”。
 
 如果要导入源码工程，请在“固件管理”中使用对应的官方下载按钮：
 
@@ -134,8 +137,11 @@ Stick S3 虚拟设备是用于导入、运行和操作 StickS3 固件项目的�
 
 安装完成后返回应用点击“重新检测”。
 
-首个私有测试版使用 ad-hoc 签名，尚未完成 Apple 公证。对外分发前应使用
-Developer ID 签名、Apple 公证和 Gatekeeper 验证。
+> [!WARNING]
+> 此开源测试版使用 ad-hoc 签名，尚未取得 Developer ID 签名或 Apple 公证。
+> macOS 会显示无法验证开发者的 Gatekeeper 提示。请只从本仓库的官方 Release
+> 页面下载，并在打开前核对 SHA-256。介意该提示的用户应从源码构建或等待未来
+> 的已签名版本。
 
 ### 从源码运行
 
