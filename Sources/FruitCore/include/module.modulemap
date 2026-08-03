@@ -1,0 +1,4 @@
+module FruitCore {
+    header "FruitBridge.h"
+    export *
+}

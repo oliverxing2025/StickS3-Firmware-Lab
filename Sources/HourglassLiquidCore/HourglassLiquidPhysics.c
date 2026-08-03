@@ -1,0 +1,15 @@
+#define hg_physics_init hg_liquid_physics_init
+#define hg_physics_reset hg_liquid_physics_reset
+#define hg_physics_step hg_liquid_physics_step
+#define hg_physics_set_limits hg_liquid_physics_set_limits
+#define hg_physics_request_particle_count hg_liquid_physics_request_particle_count
+#define hg_physics_wake_surface hg_liquid_physics_wake_surface
+#define hg_physics_particles hg_liquid_physics_particles
+#define hg_physics_particle_count hg_liquid_physics_particle_count
+#define hg_physics_stats hg_liquid_physics_stats
+#define hg_geometry_left_boundary hg_liquid_geometry_left_boundary
+#define hg_geometry_right_boundary hg_liquid_geometry_right_boundary
+#ifndef LIQUID_FIRMWARE_PHYSICS
+#define LIQUID_FIRMWARE_PHYSICS "../../Vendor/Firmware/liquid/src/hourglass_physics.c"
+#endif
+#include LIQUID_FIRMWARE_PHYSICS

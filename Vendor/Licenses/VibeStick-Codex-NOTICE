@@ -1,0 +1,33 @@
+VibeStick-Codex
+
+Based on VibeStick by Gary Zhang:
+https://github.com/GaryGaryyy/VibeStick
+
+Original software Copyright (c) 2026 Gary Zhang.
+VibeStick-Codex modifications Copyright (c) 2026 Oliver Xing.
+The original software and modifications are distributed under the MIT License.
+See LICENSE for the complete license text.
+
+The landscape dashboard's visual design and information architecture were
+inspired by CodeBuddy by CharlexH:
+https://github.com/CharlexH/CodeBuddy
+
+The dashboard was independently reimplemented for VibeStick-Codex using
+ESP-IDF and LVGL; CodeBuddy source code and artwork are not redistributed in
+this repository. CodeBuddy's StickS3 firmware is distributed under the MIT
+License. See:
+https://github.com/CharlexH/CodeBuddy/blob/main/firmware/LICENSE
+
+This repository contains a generated LVGL glyph subset derived from Noto Sans SC Regular.
+
+Noto Sans SC Regular
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name "Source".
+Licensed under the SIL Open Font License, Version 1.1.
+
+The generated glyph subset is used only for the StickS3 Chinese UI font in:
+
+  firmware/sticks3/generated/vibe_stick_cn_16.c
+
+The complete SIL Open Font License 1.1 text is included at:
+
+  firmware/sticks3/third_party/noto-sans-sc/OFL.txt

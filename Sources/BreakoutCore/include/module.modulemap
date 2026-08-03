@@ -1,0 +1,4 @@
+module BreakoutCore {
+    header "BreakoutBridge.h"
+    export *
+}

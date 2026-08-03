@@ -1,0 +1,1 @@
+module HourglassCore { header "HourglassBridge.h" export * }

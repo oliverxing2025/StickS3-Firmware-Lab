@@ -1,0 +1,14 @@
+Stick S3 Virtual Device
+Copyright (c) 2026 Oliver Xing
+
+This repository contains simulator adapter snapshots from the VibeStick
+firmware projects listed in THIRD_PARTY_NOTICES.md. The snapshots are included
+so a clean checkout builds without sibling repositories. Imported project
+source is read-only and is compiled only after the user chooses Reload
+Firmware.
+
+VibeStick-Codex contains work based on VibeStick by Gary Zhang. Its original
+attribution and license are preserved in Vendor/Licenses/.
+
+LVGL and generated Montserrat font data are redistributed under their
+respective licenses in Vendor/Licenses/. No Arial font binary is distributed.

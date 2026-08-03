@@ -1,0 +1,1 @@
+module CodexCore { header "CodexFirmwareBridge.h" export * }

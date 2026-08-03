@@ -1,0 +1,29 @@
+/.build/
+/build/
+/.swiftpm/
+/.derived-data/
+DerivedData/
+*.xcarchive
+xcuserdata/
+*.xcuserstate
+.DS_Store
+
+# Local credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+*.token
+*.key
+*.pem
+*.p12
+*.mobileprovision
+sdkconfig*
+
+# Local runtime data and distributable build artifacts
+*.log
+*.bin
+*.dmg
+*.zip
+logs/
+recordings/
+state/
