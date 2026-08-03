@@ -8,7 +8,7 @@
   <p>
     <a href="#项目概览">项目概览</a> ·
     <a href="#v010-更新">v0.1.0</a> ·
-    <a href="#已支持固件">支持固件</a> ·
+    <a href="#支持大部分-sticks3-固件">固件兼容</a> ·
     <a href="#完整控制">完整控制</a> ·
     <a href="#安装">安装</a> ·
     <a href="#测试状态与-windows-支持">支持说明</a> ·
@@ -22,8 +22,6 @@
     <img alt="版本：0.1.0" src="https://img.shields.io/badge/version-0.1.0-2F80ED">
     <img alt="模式：本地优先" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
-  <br>
-  <img src="Resources/AppIcon-1024.png" alt="Stick S3 虚拟设备应用图标" width="420">
 </div>
 
 ## v0.1.0 更新
@@ -60,7 +58,7 @@ RGB565 输出。
 > ESP32 内存与任务调度、OTA 元数据、分区和烧录安全仍需 StickS3 真机验收。
 
 <div align="center">
-  <img src="assets/screenshots/fruit-machine-console.png" alt="怀旧水果机运行在 Stick S3 虚拟设备控制台中" width="1000">
+  <img src="assets/screenshots/empty-firmware-library.png" alt="尚未导入固件时的干净首次运行状态" width="1000">
 </div>
 
 ## 设备体验
@@ -79,18 +77,20 @@ RGB565 输出。
   <img src="assets/screenshots/codex-landscape-console.png" alt="VibeStick Codex 横屏运行及虚拟姿态和设备控制" width="1000">
 </div>
 
-## 已支持固件
+## 支持大部分 StickS3 固件
 
-| 固件适配器 | 复用实现 | 模拟内容 |
-| --- | --- | --- |
-| VibeStick Neon Brick Pulse | `BreakoutGame.cpp`、`GameRenderer.cpp` | 游戏状态、碰撞、倾斜、声音与像素渲染 |
-| VibeStick Fruit Machine | 固件 `main.c`、资产与声音定义 | 轮盘、信用分、下注、奖励、按键、姿态、声音与 RGB565 画布 |
-| VibeStick Hourglass | LVGL 界面与粒子物理 | 计时、按键、翻转、粒子与完成状态 |
-| VibeStick Hourglass Liquid | LVGL 液态渲染与物理 | 液态沙粒、重力响应、计时与完成旋律 |
-| VibeStick Codex | 固件 `main.c` 与生成 UI 资产 | LVGL 组件、字体、人物帧、录音遮罩与 240 × 135 布局 |
+本应用面向大部分 StickS3 固件源码项目设计。用户可以导入项目根目录或
+`firmware/sticks3` 目录，检查源码结构和资源占用，并通过统一的固件目录
+进行管理。
 
-LVGL 适配器共用仓库中固定的 LVGL 9.2 源码快照和 Montserrat 配置。
-正常构建不会读取相邻仓库。
+使用常见 RGB565 或 LVGL 渲染、实体按键、BMI270 姿态和声音接口的项目，
+可以直接复用固件自己的实现，不需要在 SwiftUI 中重画界面。已经匹配主机
+适配接口的项目可以直接模拟；尚未接入硬件调用的项目会保持只读并明确提示
+需要补充适配，模拟器不会伪造或替代固件行为。
+
+内置 LVGL 主机使用仓库中固定的 LVGL 9.2 源码快照和 Montserrat 配置，
+正常构建不会读取相邻仓库。ESP32 原始 `.bin` 文件可以登记和识别，但
+不能在当前源码型 macOS 主机中直接执行。
 
 ## 系统要求
 
@@ -146,7 +146,7 @@ Developer ID 签名、Apple 公证和 Gatekeeper 验证。
 导入目录只作为只读引用。把条目从目录中删除不会删除或修改原项目。
 
 <div align="center">
-  <img src="assets/screenshots/empty-firmware-library.png" alt="尚未导入固件时的干净首次运行状态" width="1000">
+  <img src="assets/screenshots/fruit-machine-console.png" alt="怀旧水果机运行在 Stick S3 虚拟设备控制台中" width="1000">
 </div>
 
 ## 完整控制

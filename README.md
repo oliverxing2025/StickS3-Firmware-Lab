@@ -8,7 +8,7 @@
   <p>
     <a href="#overview">Overview</a> ·
     <a href="#whats-new-in-v010">v0.1.0</a> ·
-    <a href="#supported-firmware">Firmware</a> ·
+    <a href="#broad-firmware-compatibility">Compatibility</a> ·
     <a href="#complete-controls">Controls</a> ·
     <a href="#installation">Install</a> ·
     <a href="#testing-status-and-windows-support">Support</a> ·
@@ -22,8 +22,6 @@
     <img alt="Version: 0.1.0" src="https://img.shields.io/badge/version-0.1.0-2F80ED">
     <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
-  <br>
-  <img src="Resources/AppIcon-1024.png" alt="Stick S3 Virtual Device application icon" width="420">
 </div>
 
 ## What's new in v0.1.0
@@ -67,7 +65,7 @@ a physical-device shell.
 > partitions, and flash safety still require a physical StickS3.
 
 <div align="center">
-  <img src="assets/screenshots/fruit-machine-console.png" alt="Nostalgic Fruit Machine running inside the Stick S3 Virtual Device console" width="1000">
+  <img src="assets/screenshots/empty-firmware-library.png" alt="Clean first-run state before a firmware project is imported" width="1000">
 </div>
 
 ## Device experience
@@ -86,19 +84,24 @@ a physical-device shell.
   <img src="assets/screenshots/codex-landscape-console.png" alt="VibeStick Codex running in landscape pose with virtual motion and device controls" width="1000">
 </div>
 
-## Supported firmware
+## Broad firmware compatibility
 
-| Firmware adapter | Reused implementation | Simulated behavior |
-| --- | --- | --- |
-| VibeStick Neon Brick Pulse | `BreakoutGame.cpp`, `GameRenderer.cpp` | Game state, collision, tilt input, audio, and pixel rendering |
-| VibeStick Fruit Machine | Firmware `main.c`, assets, and audio definitions | Board logic, credit, bets, awards, buttons, motion, audio, and RGB565 canvas |
-| VibeStick Hourglass | LVGL interface and particle physics | Timer, buttons, orientation, particles, and completion state |
-| VibeStick Hourglass Liquid | LVGL liquid renderer and physics | Liquid grains, gravity response, timing, and completion melody |
-| VibeStick Codex | Firmware `main.c` and generated UI assets | LVGL widgets, fonts, animation frames, recording overlay, and 240 × 135 layout |
+The application is designed for broad compatibility with most StickS3
+firmware source projects. It can import a project root or
+`firmware/sticks3` directory, inspect its structure and resource usage, and
+manage it from the shared firmware catalog.
 
-The LVGL adapters use the pinned LVGL 9.2 source snapshot and Montserrat
+Projects using common RGB565 or LVGL rendering, physical buttons, BMI270 motion,
+and audio interfaces can reuse their firmware-owned implementation instead of
+rebuilding the interface in SwiftUI. A project with a matching host adapter can
+run immediately. A project whose hardware calls have not yet been hosted stays
+read-only and is clearly marked for adapter work; the simulator does not invent
+or substitute firmware behavior.
+
+The built-in LVGL host uses the pinned LVGL 9.2 source snapshot and Montserrat
 configuration stored in this repository. A normal build does not read sibling
-repositories.
+repositories. Raw ESP32 `.bin` files can be cataloged and identified, but
+cannot execute directly inside the source-based macOS host.
 
 ## System requirements
 
@@ -162,7 +165,7 @@ Imported source directories are read-only references. Removing an entry from
 the catalog does not delete or modify the original project.
 
 <div align="center">
-  <img src="assets/screenshots/empty-firmware-library.png" alt="Clean first-run state before a firmware project is imported" width="1000">
+  <img src="assets/screenshots/fruit-machine-console.png" alt="Nostalgic Fruit Machine running inside the Stick S3 Virtual Device console" width="1000">
 </div>
 
 ## Complete controls
