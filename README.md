@@ -30,16 +30,14 @@ Released on August 3, 2026. Repository members can download the app and view
 the complete notes on the
 [v0.1.0 release page](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases/tag/v0.1.0).
 
-- **Real firmware adapters:** five verified StickS3 projects run their actual
-  renderer, state, physics, input, and audio integration code on macOS.
+- **Broad firmware import:** add most StickS3 source projects to one local
+  catalog and check their compatibility before starting.
 - **Whole-device pose simulation:** portrait, left 90°, right 90°, and upside
   down rotate the body, display, and physical buttons together.
 - **Fixed desktop viewport:** the application does not scroll horizontally or
   vertically; the complete control surface stays in one window.
-- **Project import and reload:** inspect a firmware source tree, verify its
-  fingerprint, and rebuild the selected adapter without modifying that project.
-- **Pixel regression coverage:** stable RGB565 frame hashes detect unintended
-  changes in color, typography, geometry, layering, or firmware behavior.
+- **Safe project reload:** refresh an imported source project without modifying
+  its original files.
 
 ## Overview
 
@@ -47,17 +45,15 @@ the complete notes on the
   <img src="assets/screenshots/stick-s3-virtual-device-brand.png" alt="Stick S3 Virtual Device and XiaoAo Technology brand artwork" width="520">
 </div>
 
-Stick S3 Virtual Device is a native macOS development and demonstration
-environment for StickS3 firmware. It compiles firmware-owned rendering and
-interaction code directly into host adapters and presents the RGB565 output in
-a physical-device shell.
+Stick S3 Virtual Device is a native macOS environment for importing, running,
+and interacting with StickS3 firmware projects in a physical-device shell.
 
 | | Capability | What it adds |
 | --- | --- | --- |
-| **01** | Real firmware execution | Reuses firmware renderers and state machines instead of drawing a look-alike interface in SwiftUI. |
+| **01** | Broad firmware import | Adds most StickS3 source projects to one local catalog for compatibility checks and simulation. |
 | **02** | Complete device controls | Simulates BMI270 gravity axes, both physical buttons, battery, charging, sound, and display refresh rate. |
-| **03** | Source-aware reload | Fingerprints known projects and clearly reports when an imported source tree must be rebuilt. |
-| **04** | Deterministic verification | Exercises fixed firmware states and compares complete frame output for pixel-level drift. |
+| **03** | Safe project reload | Refreshes changed project source without modifying the original directory. |
+| **04** | Local-first data | Keeps imported paths, settings, and test data on the Mac rather than uploading them to a service. |
 
 > [!NOTE]
 > This application complements real-device testing. Display color, physical
@@ -78,10 +74,10 @@ a physical-device shell.
 - Adjust battery, charging, audio, brightness, and 30/60 FPS state.
 - Pause simulation or restart the current firmware without restarting the app.
 - Inspect firmware capacity and application-image resource usage.
-- View real test, prepare, compile, link, and signing stages while reloading.
+- View reload progress and logs.
 
 <div align="center">
-  <img src="assets/screenshots/codex-landscape-console.png" alt="VibeStick Codex running in landscape pose with virtual motion and device controls" width="1000">
+  <img src="assets/screenshots/landscape-control-console.png" alt="Firmware running in landscape pose with virtual motion and device controls" width="1000">
 </div>
 
 ## Broad firmware compatibility
@@ -92,16 +88,10 @@ firmware source projects. It can import a project root or
 manage it from the shared firmware catalog.
 
 Projects using common RGB565 or LVGL rendering, physical buttons, BMI270 motion,
-and audio interfaces can reuse their firmware-owned implementation instead of
-rebuilding the interface in SwiftUI. A project with a matching host adapter can
-run immediately. A project whose hardware calls have not yet been hosted stays
-read-only and is clearly marked for adapter work; the simulator does not invent
-or substitute firmware behavior.
-
-The built-in LVGL host uses the pinned LVGL 9.2 source snapshot and Montserrat
-configuration stored in this repository. A normal build does not read sibling
-repositories. Raw ESP32 `.bin` files can be cataloged and identified, but
-cannot execute directly inside the source-based macOS host.
+and audio interfaces can usually be simulated directly. The application checks
+each imported project and clearly reports whether it can run or needs a
+compatibility update. Raw ESP32 `.bin` files can be cataloged and identified,
+but cannot execute directly inside the source-based macOS application.
 
 ## System requirements
 
@@ -111,7 +101,6 @@ cannot execute directly inside the source-based macOS host.
 | Operating system | macOS 14 or later |
 | Source build | Xcode command-line tools and Swift 6 |
 | Display | Fixed application window; no horizontal or vertical page scrolling |
-| Optional Codex bridge | Local loopback service at `127.0.0.1:8765` |
 
 ## Testing status and Windows support
 
@@ -155,8 +144,8 @@ notarization, and Gatekeeper verification.
 1. Launch the application.
 2. Select **Import firmware or project** and choose one project root,
    `firmware/sticks3` directory, or ESP32 `.bin` file.
-3. Open **Manage** to inspect compatibility and source fingerprints.
-4. Start a supported adapter.
+3. Open **Manage** to inspect compatibility and project status.
+4. Start a compatible firmware project.
 5. Use pose, motion, button, battery, and audio controls to exercise the
    firmware.
 6. After changing firmware source, choose **Reload firmware**.
@@ -165,7 +154,7 @@ Imported source directories are read-only references. Removing an entry from
 the catalog does not delete or modify the original project.
 
 <div align="center">
-  <img src="assets/screenshots/fruit-machine-console.png" alt="Nostalgic Fruit Machine running inside the Stick S3 Virtual Device console" width="1000">
+  <img src="assets/screenshots/running-firmware-console.png" alt="Firmware running inside the Stick S3 Virtual Device console" width="1000">
 </div>
 
 ## Complete controls
@@ -202,14 +191,10 @@ unbound; the simulator does not invent a behavior.
 
 - Import one project root, `firmware/sticks3` directory, or `.bin` file at
   a time.
-- Known adapters calculate SHA-256 fingerprints for their required source
-  files.
-- A matching fingerprint can run immediately; changed source is marked for
-  reload.
-- Reload uses the selected source directory as real compilation input and does
-  not modify its Git worktree.
-- Unsupported source projects receive a structure report rather than an
-  invented simulator.
+- The application checks the project structure and reports whether it can run.
+- After source files change, use **Reload firmware** to refresh the project.
+- Imported directories remain read-only and are never modified by the app.
+- Projects that need additional compatibility work are clearly identified.
 - Raw ESP32 binaries can be cataloged and identified, but they cannot execute
   inside the current source-based macOS host.
 
@@ -217,43 +202,21 @@ The project catalog is stored under
 `Application Support/Stick S3 Firmware Simulator/`. It remains outside the
 synchronized workspace and outside Git.
 
-## Accuracy and verification
-
-The test suite generates complete frame hashes for five verified adapter
-states. Unexpected changes in color, font, coordinate, layer order, or real
-firmware behavior fail the baseline.
-
-```sh
-swift test
-```
-
-The simulator is suitable for UI, state-machine, physics, input, and audio
-timing work. Final firmware acceptance still requires a guarded physical-device
-flash and runtime validation.
-
 ## Project structure
 
 ```text
 .
 ├── assets/screenshots/
-│   ├── codex-landscape-console.png
 │   ├── empty-firmware-library.png
-│   ├── fruit-machine-console.png
+│   ├── landscape-control-console.png
+│   ├── running-firmware-console.png
 │   └── stick-s3-virtual-device-brand.png
 ├── Resources/
 │   ├── AppIcon-1024.png
 │   ├── Info.plist
 │   └── SplashAvatar.png
 ├── Sources/
-│   ├── BreakoutCore/
-│   ├── CodexCore/
-│   ├── FruitCore/
-│   ├── HourglassCore/
-│   ├── HourglassLiquidCore/
-│   ├── LVGLHost/
-│   ├── SimulatorSupport/
-│   └── StickS3Simulator/
-├── Tests/BreakoutCoreTests/
+├── Tests/
 ├── Vendor/
 ├── scripts/
 ├── Package.swift
@@ -283,11 +246,11 @@ Local builds use ad-hoc signing by default. A distributor can explicitly set
 ## Privacy and local data
 
 - Imported project paths are stored only in local Application Support.
-- Bridge tokens are accepted only from an explicitly imported Codex project
-  or the `VIBE_STICK_BRIDGE_TOKEN` process environment.
-- Tokens remain in memory and are not displayed, copied, or written to the
-  simulator catalog.
-- A clean installation does not read macOS Keychain bridge entries.
+- Optional local connection credentials are used only when explicitly
+  provided by the user.
+- Credentials remain in memory and are not displayed, copied, or written to
+  the simulator catalog.
+- A clean installation does not read unrelated macOS Keychain entries.
 - User project paths are not frozen into the distributed application binary.
 - The simulator does not flash, erase, or modify a physical StickS3.
 

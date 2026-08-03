@@ -30,11 +30,10 @@
 [v0.1.0 发布页](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases/tag/v0.1.0)
 下载安装包并查看完整说明。
 
-- **真实固件适配器：**五个已验证 StickS3 项目直接在 macOS 上运行各自的渲染、状态、物理、输入与声音逻辑。
+- **广泛固件导入：**将大部分 StickS3 源码项目加入本机目录，并在运行前检查兼容状态。
 - **整机姿态模拟：**正放、左转 90°、右转 90°、反放会同时旋转机身、屏幕和实体按键。
 - **固定桌面视口：**页面不能上下或左右滚动，完整控制区始终保持在同一个窗口内。
-- **项目导入与重载：**检查固件源码结构和指纹，并在不修改原项目的前提下重建所选适配器。
-- **像素回归验证：**通过稳定 RGB565 完整帧哈希检测颜色、字体、坐标、图层或固件行为漂移。
+- **安全项目重载：**固件源码变化后可以重新载入，不修改原项目文件。
 
 ## 项目概览
 
@@ -42,16 +41,15 @@
   <img src="assets/screenshots/stick-s3-virtual-device-brand.png" alt="Stick S3 虚拟设备与小奥科技品牌图" width="520">
 </div>
 
-Stick S3 虚拟设备是面向 StickS3 固件开发与演示的原生 macOS 环境。
-它把固件自己的渲染与交互代码直接编译为主机适配器，并在虚拟机身中显示
-RGB565 输出。
+Stick S3 虚拟设备是用于导入、运行和操作 StickS3 固件项目的原生 macOS
+环境，并通过完整的虚拟机身呈现固件界面。
 
 | | 能力 | 作用 |
 | --- | --- | --- |
-| **01** | 真实固件执行 | 复用固件渲染器和状态机，不在 SwiftUI 中绘制仿制界面 |
+| **01** | 广泛固件导入 | 将大部分 StickS3 源码项目加入本机目录，检查兼容状态并进行模拟 |
 | **02** | 完整设备控制 | 模拟 BMI270 重力轴、两个实体按键、电量、充电、声音和刷新率 |
-| **03** | 源码感知重载 | 对已知项目计算指纹，明确提示导入源码是否需要重新构建 |
-| **04** | 确定性验证 | 对固定固件状态生成完整帧并检查像素级漂移 |
+| **03** | 安全项目重载 | 源码变化后重新载入，不修改原始项目目录 |
+| **04** | 本地数据优先 | 导入路径、设置和测试数据保留在 Mac 本机，不上传到网络服务 |
 
 > [!NOTE]
 > 本应用用于补充真机测试。屏幕色差、真实传感器噪声、ES8311 响应、
@@ -71,10 +69,10 @@ RGB565 输出。
 - 调整电量、充电、声音、亮度和 30/60 FPS 状态。
 - 暂停模拟或重启当前固件，不必重启应用。
 - 查看分区容量和应用镜像资源使用情况。
-- 重新载入时查看真实测试、准备、编译、链接和签名阶段。
+- 查看重新载入进度和日志。
 
 <div align="center">
-  <img src="assets/screenshots/codex-landscape-console.png" alt="VibeStick Codex 横屏运行及虚拟姿态和设备控制" width="1000">
+  <img src="assets/screenshots/landscape-control-console.png" alt="固件横屏运行及虚拟姿态和设备控制" width="1000">
 </div>
 
 ## 支持大部分 StickS3 固件
@@ -84,13 +82,9 @@ RGB565 输出。
 进行管理。
 
 使用常见 RGB565 或 LVGL 渲染、实体按键、BMI270 姿态和声音接口的项目，
-可以直接复用固件自己的实现，不需要在 SwiftUI 中重画界面。已经匹配主机
-适配接口的项目可以直接模拟；尚未接入硬件调用的项目会保持只读并明确提示
-需要补充适配，模拟器不会伪造或替代固件行为。
-
-内置 LVGL 主机使用仓库中固定的 LVGL 9.2 源码快照和 Montserrat 配置，
-正常构建不会读取相邻仓库。ESP32 原始 `.bin` 文件可以登记和识别，但
-不能在当前源码型 macOS 主机中直接执行。
+通常可以直接模拟。应用会检查每个导入项目，并明确报告它是否可以运行或需要
+兼容性更新。ESP32 原始 `.bin` 文件可以登记和识别，但不能在当前源码型
+macOS 应用中直接执行。
 
 ## 系统要求
 
@@ -100,7 +94,6 @@ RGB565 输出。
 | 操作系统 | macOS 14 或更高版本 |
 | 源码构建 | Xcode 命令行工具与 Swift 6 |
 | 页面 | 固定应用窗口，不允许上下或左右滚动 |
-| 可选 Codex Bridge | 本机回环服务 `127.0.0.1:8765` |
 
 ## 测试状态与 Windows 支持
 
@@ -138,15 +131,15 @@ Developer ID 签名、Apple 公证和 Gatekeeper 验证。
 
 1. 启动应用。
 2. 选择“导入固件或项目”，指定一个项目根目录、`firmware/sticks3` 目录或 ESP32 `.bin` 文件。
-3. 打开“管理”检查兼容性与源码指纹。
-4. 启动已经支持的固件适配器。
+3. 打开“管理”检查兼容性与项目状态。
+4. 启动兼容的固件项目。
 5. 使用姿态、重力、按键、电量和声音控制测试固件。
 6. 固件源码变化后选择“重新载入固件”。
 
 导入目录只作为只读引用。把条目从目录中删除不会删除或修改原项目。
 
 <div align="center">
-  <img src="assets/screenshots/fruit-machine-console.png" alt="怀旧水果机运行在 Stick S3 虚拟设备控制台中" width="1000">
+  <img src="assets/screenshots/running-firmware-console.png" alt="固件运行在 Stick S3 虚拟设备控制台中" width="1000">
 </div>
 
 ## 完整控制
@@ -181,50 +174,30 @@ Developer ID 签名、Apple 公证和 Gatekeeper 验证。
 ## 导入与重新载入固件
 
 - 每次导入一个项目根目录、`firmware/sticks3` 目录或 `.bin` 文件。
-- 已知适配器对必需源码文件计算 SHA-256 指纹。
-- 指纹一致时可以直接运行；源码变化后会明确标记需要重载。
-- 重载使用所选源码作为真实编译输入，不修改其 Git 工作树。
-- 不支持的源码项目只生成结构检查报告，不伪造模拟结果。
+- 应用会检查项目结构并报告它是否可以运行。
+- 源码变化后，使用“重新载入固件”刷新项目。
+- 导入目录始终保持只读，应用不会修改原始文件。
+- 需要进一步兼容处理的项目会得到明确提示。
 - ESP32 原始二进制可以登记和识别，但不能在当前源码型 macOS 主机中直接执行。
 
 项目目录保存在
 `Application Support/Stick S3 Firmware Simulator/`，不进入同步工作区或 Git。
-
-## 精度与验证
-
-测试套件会为五个已验证适配器状态生成完整帧哈希。颜色、字体、坐标、图层顺序
-或真实固件行为出现意外变化时，基准测试会失败。
-
-```sh
-swift test
-```
-
-模拟器适合日常 UI、状态机、物理、输入和声音时序开发。最终固件仍须经过带身份
-保护的真机烧录与运行验证。
 
 ## 项目结构
 
 ```text
 .
 ├── assets/screenshots/
-│   ├── codex-landscape-console.png
 │   ├── empty-firmware-library.png
-│   ├── fruit-machine-console.png
+│   ├── landscape-control-console.png
+│   ├── running-firmware-console.png
 │   └── stick-s3-virtual-device-brand.png
 ├── Resources/
 │   ├── AppIcon-1024.png
 │   ├── Info.plist
 │   └── SplashAvatar.png
 ├── Sources/
-│   ├── BreakoutCore/
-│   ├── CodexCore/
-│   ├── FruitCore/
-│   ├── HourglassCore/
-│   ├── HourglassLiquidCore/
-│   ├── LVGLHost/
-│   ├── SimulatorSupport/
-│   └── StickS3Simulator/
-├── Tests/BreakoutCoreTests/
+├── Tests/
 ├── Vendor/
 ├── scripts/
 ├── Package.swift
@@ -254,10 +227,9 @@ swift test
 ## 隐私与本地数据
 
 - 导入项目路径只保存在本机 Application Support。
-- Bridge Token 只接受用户显式导入的 Codex 项目或
-  `VIBE_STICK_BRIDGE_TOKEN` 进程环境变量。
-- Token 只保留在内存中，不显示、不复制、不写入模拟器目录。
-- 干净安装不会读取 macOS 钥匙串中的 Bridge 条目。
+- 可选本地连接凭据只有在用户明确提供时才会使用。
+- 凭据只保留在内存中，不显示、不复制、不写入模拟器目录。
+- 干净安装不会读取无关的 macOS 钥匙串条目。
 - 用户项目路径不会固化到分发应用的二进制中。
 - 模拟器不会烧录、擦除或修改真实 StickS3。
 
