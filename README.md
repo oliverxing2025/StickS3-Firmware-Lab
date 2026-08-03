@@ -1,90 +1,281 @@
-# Stick S3 虚拟设备
+<div align="center">
+  <h1>Stick S3 Virtual Device</h1>
+  <p><strong>Native macOS virtual device for M5Stack StickS3 firmware</strong></p>
+  <p>
+    Run real firmware renderers, interaction logic, motion input, buttons,<br>
+    audio timing, and RGB565 frames without rewriting the UI in SwiftUI.
+  </p>
+  <p>
+    <a href="#overview">Overview</a> ·
+    <a href="#whats-new-in-v010">v0.1.0</a> ·
+    <a href="#supported-firmware">Firmware</a> ·
+    <a href="#complete-controls">Controls</a> ·
+    <a href="#installation">Install</a> ·
+    <a href="#build">Build</a> ·
+    <a href="README.zh-CN.md">简体中文</a>
+  </p>
+  <p>
+    <img alt="Platform: macOS 14+" src="https://img.shields.io/badge/platform-macOS%2014%2B-111111">
+    <img alt="Architecture: Apple Silicon" src="https://img.shields.io/badge/architecture-Apple%20Silicon-5A5A5A">
+    <img alt="Swift: 6" src="https://img.shields.io/badge/Swift-6-F05138">
+    <img alt="Version: 0.1.0" src="https://img.shields.io/badge/version-0.1.0-2F80ED">
+    <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-2E8B57">
+  </p>
+  <br>
+  <img src="assets/screenshots/stick-s3-virtual-device-brand.png" alt="Stick S3 Virtual Device and XiaoAo Technology brand artwork" width="520">
+</div>
 
-原生 macOS 桌面模拟器。它直接编译 Stick S3 各项目的真实渲染与游戏/交互逻辑，并显示固件产生的 RGB565 帧缓冲；不在 SwiftUI 中另外画一套相似界面。
+## What's new in v0.1.0
 
-## 已接入的真实固件
+Released on August 3, 2026. Repository members can download the app and view
+the complete notes on the
+[v0.1.0 release page](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases/tag/v0.1.0).
 
-- `VibeStick-Neon-Brick-Pulse`：直接编译 `BreakoutGame.cpp` 与 `GameRenderer.cpp`，使用真实游戏状态、碰撞、倾斜和像素渲染。
-- `VibeStick-Fruit-Machine`：直接引入固件 `main.c` 的轮盘、信用分、下注、奖励、按键、姿态和 RGB565 画布。声音使用 `fruit_audio.c` 的同一组频率、时长与包络，包括中奖后金币掉落音效。
-- `VibeStick-Hourglass`：直接引入真实 LVGL 界面、粒子物理、计时、按键和翻转逻辑。
-- `VibeStick-Hourglass-Liquid`：直接引入真实 LVGL 液态沙粒渲染与物理，完成时使用真机同款旋律。
-- `VibeStick-Codex`：直接引入固件 `main.c` 和 `vibe_stick_ui_assets.c`，由真实 LVGL 组件、字体、人物帧、录音遮罩与 240 × 135 布局产生像素。可使用本地模拟数据，也可连接 `http://127.0.0.1:8765/state` Bridge。
+- **Real firmware adapters:** five verified StickS3 projects run their actual
+  renderer, state, physics, input, and audio integration code on macOS.
+- **Whole-device pose simulation:** portrait, left 90°, right 90°, and upside
+  down rotate the body, display, and physical buttons together.
+- **Fixed desktop viewport:** the application does not scroll horizontally or
+  vertically; the complete control surface stays in one window.
+- **Project import and reload:** inspect a firmware source tree, verify its
+  fingerprint, and rebuild the selected adapter without modifying that project.
+- **Pixel regression coverage:** stable RGB565 frame hashes detect unintended
+  changes in color, typography, geometry, layering, or firmware behavior.
 
-三个 LVGL 固件共用仓库内固定的 LVGL 9.2 源码和 Montserrat 字体配置。正常构建不会读取相邻仓库；维护者只有在显式提供 `LVGL_SOURCE_DIR` 时才会更新 LVGL 快照。
+## Overview
 
-## 像素一致性
+Stick S3 Virtual Device is a native macOS development and demonstration
+environment for StickS3 firmware. It compiles firmware-owned rendering and
+interaction code directly into host adapters and presents the RGB565 output in
+a physical-device shell.
 
-测试会对仓库内五个已确认适配器快照的固定状态生成完整帧哈希。任何颜色、字体、坐标、图层或真实逻辑导致的意外漂移都会让仓库基准失败。用户主动选择的开发中固件在“重新载入”阶段作为真实编译输入；它允许预期中的新画面，不会被旧截图哈希阻止。
+| | Capability | What it adds |
+| --- | --- | --- |
+| **01** | Real firmware execution | Reuses firmware renderers and state machines instead of drawing a look-alike interface in SwiftUI. |
+| **02** | Complete device controls | Simulates BMI270 gravity axes, both physical buttons, battery, charging, sound, and display refresh rate. |
+| **03** | Source-aware reload | Fingerprints known projects and clearly reports when an imported source tree must be rebuilt. |
+| **04** | Deterministic verification | Exercises fixed firmware states and compares complete frame output for pixel-level drift. |
 
-模拟器可用于日常 UI、状态机、物理、按键、姿态和声音时序测试；屏幕色差、BMI270 真实噪声、ES8311 响应、ESP32 内存/任务调度、OTA 和分区仍须真机验收。
+> [!NOTE]
+> This application complements real-device testing. Display color, physical
+> sensor noise, ES8311 response, ESP32 memory and task scheduling, OTA metadata,
+> partitions, and flash safety still require a physical StickS3.
 
-## 通用控制区
+<div align="center">
+  <img src="assets/screenshots/fruit-machine-console.png" alt="Nostalgic Fruit Machine running inside the Stick S3 Virtual Device console" width="1000">
+</div>
 
-所有固件保持同一个固定控制区：
+## Device experience
 
-- 顶部固件下拉选择。
-- 顶部“默认 / 实寸”切换；为保证像素内容可读，实寸模式按 Stick S3 正面 48 × 24 mm 的 2 倍显示。
-- 正放、左转 90°、右转 90°、反放四种姿态；屏幕、机身和实体按键作为整体旋转，同时向真实固件送入对应的 X/Y/Z 重力方向。
-- BMI270 X/Y/Z 轴、电量、充电、声音和 30/60 FPS。
-- 蓝色前键与灰色侧键的单击、双击、三击、四击、长按。高亮表示当前真机固件已绑定，淡显表示未绑定，不伪造功能。
+- Choose imported firmware from one shared catalog.
+- Switch between the readable default scale and a physical-size reference.
+- Rotate the complete virtual device to four supported poses.
+- Drive X, Y, and Z gravity independently with the control console.
+- Trigger single, double, triple, quadruple, and long presses for both buttons.
+- Adjust battery, charging, audio, brightness, and 30/60 FPS state.
+- Pause simulation or restart the current firmware without restarting the app.
+- Inspect firmware capacity and application-image resource usage.
+- View real test, prepare, compile, link, and signing stages while reloading.
 
-Codex 的灰键三击在虚拟机中只传递/记录事件，不会更改 Mac 或真机 OTA 分区。干净安装不读取 macOS 钥匙串。用户主动导入 `VibeStick-Codex` 项目后，虚拟设备可从该项目的本地 `.env` 读取 Bridge Token 用于回环地址实时同步；也可由 `VIBE_STICK_BRIDGE_TOKEN` 启动环境显式提供。Token 只保留在内存中，不显示、不复制、不写入虚拟设备配置。
+<div align="center">
+  <img src="assets/screenshots/codex-landscape-console.png" alt="VibeStick Codex running in landscape pose with virtual motion and device controls" width="1000">
+</div>
 
-所有固件的虚拟机身在“正放”时统一保持竖直实体方向。新的固件适配器必须明确声明“固定竖屏”或“随姿态自适应”，不允许根据某一帧的宽高反推机身方向。
+## Supported firmware
 
-## 导入固件或项目
+| Firmware adapter | Reused implementation | Simulated behavior |
+| --- | --- | --- |
+| VibeStick Neon Brick Pulse | `BreakoutGame.cpp`, `GameRenderer.cpp` | Game state, collision, tilt input, audio, and pixel rendering |
+| VibeStick Fruit Machine | Firmware `main.c`, assets, and audio definitions | Board logic, credit, bets, awards, buttons, motion, audio, and RGB565 canvas |
+| VibeStick Hourglass | LVGL interface and particle physics | Timer, buttons, orientation, particles, and completion state |
+| VibeStick Hourglass Liquid | LVGL liquid renderer and physics | Liquid grains, gravity response, timing, and completion melody |
+| VibeStick Codex | Firmware `main.c` and generated UI assets | LVGL widgets, fonts, animation frames, recording overlay, and 240 × 135 layout |
 
-“导入固件或项目”每次只把一个固件文件或项目文件夹加入本机测试列表，不是代码编辑或真机烧录功能。
+The LVGL adapters use the pinned LVGL 9.2 source snapshot and Montserrat
+configuration stored in this repository. A normal build does not read sibling
+repositories.
 
-- 一次可以选择一个项目根目录、`firmware/sticks3` 目录，或一个 ESP32 `.bin` 固件文件。
-- 导入的本地项目默认是只读链接；模拟器只保存路径、检查结果和自己的测试缓存。
-- 管理页可以开始模拟、查看/复制项目路径，或从固件列表删除。删除不会删除或修改原项目。
-- 已接入测试核心的五个 VibeStick 项目会计算所需源码文件的 SHA-256 指纹。指纹与当前应用一致时可以直接模拟；源码更新后会明确要求“重新载入固件”，不会借用旧版本画面。
-- 重新载入时，所选目录中的真实源码会成为该适配器的编译输入。其他源码项目只进行结构检查；如果缺少模拟接口，只报告状态，不会自动修改代码。
-- 普通 ESP32 `.bin` 可以加入列表用于识别，但当前 macOS 源码模拟架构不能直接执行，界面会明确标记“仅识别，当前不可模拟”。
+## System requirements
 
-固件选择器和管理页使用同一份固件目录，并且只显示用户主动导入的项目。新安装或删除全部项目后，列表保持为空；重新载入固件也不会自动把项目加回。删除条目会移除目录引用和测试缓存，但不删除原始源码；需要时必须再次逐个导入。应用内部的测试适配器不作为固件条目展示。
+| Item | Requirement |
+| --- | --- |
+| Mac | Apple Silicon |
+| Operating system | macOS 14 or later |
+| Source build | Xcode command-line tools and Swift 6 |
+| Display | Fixed application window; no horizontal or vertical page scrolling |
+| Optional Codex bridge | Local loopback service at `127.0.0.1:8765` |
 
-测试项目登记保存在 macOS `Application Support/Stick S3 Firmware Simulator/`，不写入同步工作区，也不进入 Git。
+## Installation
 
-## 在界面中重新载入固件
+### Release build
 
-固件源码更新后，可以在“固件选择”区域点击“重新载入固件”。
+Repository members can download
+`Stick-S3-Virtual-Device-v0.1.0-macOS-arm64.zip` from
+[GitHub Releases](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases).
 
-- 模拟器会显示真实的测试、准备、编译、链接和签名状态，并保留可查看的构建日志。
-- 构建失败时不覆盖桌面应用，当前模拟器仍可继续使用。
-- 构建成功后，独立更新助手会等待当前进程退出，校验新应用，更新桌面版本并重新打开。
-- 这个流程不修改固件源码、Git 工作树或真实 Stick S3 设备。
-- 虚拟设备源码目录只记录在本机 `Application Support` 中；用户导入的固件项目路径不会固化到应用二进制。移动或重新下载源码后，重新运行一次 `scripts/build-app.sh` 即可更新记录。
+1. Extract the ZIP on an Apple Silicon Mac.
+2. Drag **Stick S3 虚拟设备.app** into **Applications**.
+3. Open the application.
 
-## 运行与测试
+The first private test build uses ad-hoc signing and is not yet notarized with
+Apple. External distribution should use Developer ID signing, Apple
+notarization, and Gatekeeper verification.
+
+### Run from source
 
 ```sh
 ./scripts/run.sh
+```
+
+## Quick start
+
+1. Launch the application.
+2. Select **Import firmware or project** and choose one project root,
+   `firmware/sticks3` directory, or ESP32 `.bin` file.
+3. Open **Manage** to inspect compatibility and source fingerprints.
+4. Start a supported adapter.
+5. Use pose, motion, button, battery, and audio controls to exercise the
+   firmware.
+6. After changing firmware source, choose **Reload firmware**.
+
+Imported source directories are read-only references. Removing an entry from
+the catalog does not delete or modify the original project.
+
+<div align="center">
+  <img src="assets/screenshots/empty-firmware-library.png" alt="Clean first-run state before a firmware project is imported" width="1000">
+</div>
+
+## Complete controls
+
+### Device console
+
+| Control | Effect |
+| --- | --- |
+| Default / Physical size | Switch between readable scale and a 2× reference based on the 48 × 24 mm device face |
+| Upright | Send the default StickS3 gravity pose |
+| Left 90° / Right 90° | Rotate the complete body, display, buttons, and gravity axes |
+| Upside down | Rotate the complete device by 180° |
+| X / Y / Z | Adjust simulated BMI270 gravity |
+| Blue front button | Single, double, triple, quadruple, or long press |
+| Gray side button | Single, double, triple, quadruple, or long press |
+| Brightness / Battery | Update the simulated device state |
+| Charging / Sound | Toggle charging and firmware audio |
+| 30 FPS / 60 FPS | Select display refresh rate |
+
+Button bindings remain firmware-owned. A dimmed gesture is intentionally
+unbound; the simulator does not invent a behavior.
+
+### Keyboard
+
+| Key | Action |
+| --- | --- |
+| `←` / `→` | Tilt left or right |
+| `↑` / `↓` | Tilt forward or backward |
+| `Space` | Blue front-button single press |
+| `L` | Blue front-button long press |
+| `S` | Toggle sound |
+
+## Importing and reloading firmware
+
+- Import one project root, `firmware/sticks3` directory, or `.bin` file at
+  a time.
+- Known adapters calculate SHA-256 fingerprints for their required source
+  files.
+- A matching fingerprint can run immediately; changed source is marked for
+  reload.
+- Reload uses the selected source directory as real compilation input and does
+  not modify its Git worktree.
+- Unsupported source projects receive a structure report rather than an
+  invented simulator.
+- Raw ESP32 binaries can be cataloged and identified, but they cannot execute
+  inside the current source-based macOS host.
+
+The project catalog is stored under
+`Application Support/Stick S3 Firmware Simulator/`. It remains outside the
+synchronized workspace and outside Git.
+
+## Accuracy and verification
+
+The test suite generates complete frame hashes for five verified adapter
+states. Unexpected changes in color, font, coordinate, layer order, or real
+firmware behavior fail the baseline.
+
+```sh
 swift test
 ```
 
-构建并安装到桌面：
+The simulator is suitable for UI, state-machine, physics, input, and audio
+timing work. Final firmware acceptance still requires a guarded physical-device
+flash and runtime validation.
+
+## Project structure
+
+```text
+.
+├── assets/screenshots/
+│   ├── codex-landscape-console.png
+│   ├── empty-firmware-library.png
+│   ├── fruit-machine-console.png
+│   └── stick-s3-virtual-device-brand.png
+├── Resources/
+│   ├── AppIcon-1024.png
+│   ├── Info.plist
+│   └── SplashAvatar.png
+├── Sources/
+│   ├── BreakoutCore/
+│   ├── CodexCore/
+│   ├── FruitCore/
+│   ├── HourglassCore/
+│   ├── HourglassLiquidCore/
+│   ├── LVGLHost/
+│   ├── SimulatorSupport/
+│   └── StickS3Simulator/
+├── Tests/BreakoutCoreTests/
+├── Vendor/
+├── scripts/
+├── Package.swift
+├── README.md
+└── README.zh-CN.md
+```
+
+Build products, local SwiftPM state, firmware binaries, logs, credentials,
+recordings, and machine state are intentionally excluded from Git.
+
+## Build
 
 ```sh
+swift test
 ./scripts/build-app.sh
+```
+
+Install the built application on the desktop:
+
+```sh
 ./scripts/install-desktop.sh
 ```
 
-本机构建默认使用 ad-hoc 签名，不会自动选取或暴露个人开发者身份。正式分发者可显式设置 `CODESIGN_IDENTITY`，并在发布二进制前自行完成 Apple Developer ID 签名和公证。当前版本要求 macOS 14 或更高版本，已在 Apple Silicon Mac 上验证。构建、安装和普通启动都不会安装、读取或修改 Bridge 钥匙串项。
+Local builds use ad-hoc signing by default. A distributor can explicitly set
+`CODESIGN_IDENTITY` and complete Developer ID signing and notarization.
 
-## 下载发布版
+## Privacy and local data
 
-GitHub Releases 中的 `macOS-arm64.zip` 是 Apple Silicon Mac 内部测试包。解压后将“Stick S3 虚拟设备”拖入“应用程序”即可安装。
+- Imported project paths are stored only in local Application Support.
+- Bridge tokens are accepted only from an explicitly imported Codex project
+  or the `VIBE_STICK_BRIDGE_TOKEN` process environment.
+- Tokens remain in memory and are not displayed, copied, or written to the
+  simulator catalog.
+- A clean installation does not read macOS Keychain bridge entries.
+- User project paths are not frozen into the distributed application binary.
+- The simulator does not flash, erase, or modify a physical StickS3.
 
-首个私有测试版使用 ad-hoc 签名，尚未进行 Apple Developer ID 签名和公证，仅用于仓库成员测试。对外公开分发前应完成 Developer ID 签名、Apple 公证和 Gatekeeper 验证。
+## Asset and dependency notes
 
-源码许可证见 `LICENSE`，固件快照、LVGL 和字体归属见 `NOTICE` 与 `THIRD_PARTY_NOTICES.md`。
+The application artwork is project-owned. LVGL, Montserrat, and imported
+firmware snapshots retain their upstream licenses and notices under
+`Vendor/Licenses/`, `NOTICE`, and `THIRD_PARTY_NOTICES.md`.
 
-常用快捷键：
+## License
 
-- `←` / `→`：模拟左右倾斜。
-- `↑` / `↓`：模拟设备前倾/后倾（通用 BMI270 Y 轴）；水果机对应界面上/下移动。
-- `Space`：蓝色前键单击。
-- `L`：蓝色前键长按。
-- `S`：声音开关。
+Source license terms are provided in [LICENSE](LICENSE). Third-party attribution
+and firmware snapshot terms are provided in [NOTICE](NOTICE) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
