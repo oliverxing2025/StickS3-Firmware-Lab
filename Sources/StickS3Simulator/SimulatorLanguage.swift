@@ -28,7 +28,7 @@ func localizedSimulatorMessage(_ message: String, language: String) -> String {
     }
     let suffixes = [
         "可模拟": "Ready",
-        "源码已识别，缺少模拟接口": "Recognized; simulator adapter required",
+        "源码已识别，可自动生成模拟接口": "Recognized; simulator adapter can be generated automatically",
         "仅识别，当前不可模拟": "Recognized; simulation unavailable",
         "不是可识别的 Stick S3 项目": "Unrecognized Stick S3 project",
         "原目录已不存在": "Original folder is missing",

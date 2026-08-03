@@ -2,13 +2,13 @@
   <h1>Stick S3 Virtual Device</h1>
   <p><strong>Native macOS virtual device for M5Stack StickS3 firmware</strong></p>
   <p>
-    Run real firmware renderers, interaction logic, motion input, buttons,<br>
-    audio timing, and RGB565 frames without rewriting the UI in SwiftUI.
+    Build compatible StickS3 source projects in a private copy and bring their<br>
+    display, physical buttons, and BMI270 pose input into one macOS console.
   </p>
   <p>
     <a href="#overview">Overview</a> ·
-    <a href="#whats-new-in-v010">v0.1.0</a> ·
-    <a href="#broad-firmware-compatibility">Compatibility</a> ·
+    <a href="#whats-new-in-v020">v0.2.0</a> ·
+    <a href="#sticks3-source-project-compatibility">Compatibility</a> ·
     <a href="#complete-controls">Controls</a> ·
     <a href="#installation">Install</a> ·
     <a href="#testing-status-and-windows-support">Support</a> ·
@@ -19,19 +19,19 @@
     <img alt="Platform: macOS 14+" src="https://img.shields.io/badge/platform-macOS%2014%2B-111111">
     <img alt="Architecture: Apple Silicon" src="https://img.shields.io/badge/architecture-Apple%20Silicon-5A5A5A">
     <img alt="Swift: 6" src="https://img.shields.io/badge/Swift-6-F05138">
-    <img alt="Version: 0.1.0" src="https://img.shields.io/badge/version-0.1.0-2F80ED">
+    <img alt="Version: 0.2.0" src="https://img.shields.io/badge/version-0.2.0-2F80ED">
     <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
 </div>
 
-## What's new in v0.1.0
+## What's new in v0.2.0
 
-Released on August 3, 2026. Repository members can download the app and view
-the complete notes on the
-[v0.1.0 release page](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases/tag/v0.1.0).
+This private test build was updated on August 3, 2026. The installer will be
+published through GitHub Releases after signing, notarization, and the public
+release gates are complete.
 
-- **Broad firmware import:** add most StickS3 source projects to one local
-  catalog and check their compatibility before starting.
+- **Source-project simulation:** ESP-IDF, PlatformIO, and Arduino source
+  projects have completed end-to-end build, display, button, and BMI270 tests.
 - **Whole-device pose simulation:** portrait, left 90°, right 90°, and upside
   down rotate the body, display, and physical buttons together.
 - **Fixed desktop viewport:** the application does not scroll horizontally or
@@ -50,8 +50,8 @@ and interacting with StickS3 firmware projects in a physical-device shell.
 
 | | Capability | What it adds |
 | --- | --- | --- |
-| **01** | Broad firmware import | Adds most StickS3 source projects to one local catalog for compatibility checks and simulation. |
-| **02** | Complete device controls | Simulates BMI270 gravity axes, both physical buttons, battery, charging, sound, and display refresh rate. |
+| **01** | Source-project import | Adds compatible StickS3 source projects to one local catalog, identifies their build system, and checks simulation compatibility. |
+| **02** | Normal display and controls | Connects compatible source projects to their firmware display, both physical buttons, and BMI270 pose input. |
 | **03** | Safe project reload | Refreshes changed project source without modifying the original directory. |
 | **04** | Local-first data | Keeps imported paths, settings, and test data on the Mac rather than uploading them to a service. |
 
@@ -71,7 +71,8 @@ and interacting with StickS3 firmware projects in a physical-device shell.
 - Rotate the complete virtual device to four supported poses.
 - Drive X, Y, and Z gravity independently with the control console.
 - Trigger single, double, triple, quadruple, and long presses for both buttons.
-- Adjust battery, charging, audio, brightness, and 30/60 FPS state.
+- Adjust battery, charging, audio, brightness, and refresh-rate state when the
+  current firmware supports those controls.
 - Pause simulation or restart the current firmware without restarting the app.
 - Inspect firmware capacity and application-image resource usage.
 - View reload progress and logs.
@@ -80,18 +81,27 @@ and interacting with StickS3 firmware projects in a physical-device shell.
   <img src="assets/screenshots/landscape-control-console.png" alt="Firmware running in landscape pose with virtual motion and device controls" width="1000">
 </div>
 
-## Broad firmware compatibility
+## StickS3 source-project compatibility
 
-The application is designed for broad compatibility with most StickS3
-firmware source projects. It can import a project root or
-`firmware/sticks3` directory, inspect its structure and resource usage, and
-manage it from the shared firmware catalog.
+The application recognizes common StickS3 firmware project layouts. It can
+import an ESP-IDF project root, a `firmware/sticks3` directory, a
+PlatformIO/Arduino project containing `platformio.ini`, or an Arduino project
+containing an `.ino` sketch, then manage it from the shared firmware catalog.
 
-Projects using common RGB565 or LVGL rendering, physical buttons, BMI270 motion,
-and audio interfaces can usually be simulated directly. The application checks
-each imported project and clearly reports whether it can run or needs a
-compatibility update. Raw ESP32 `.bin` files can be cataloged and identified,
-but cannot execute directly inside the source-based macOS application.
+The app builds in a private copy outside the imported project and connects the
+display, both physical buttons, and BMI270 pose input for common StickS3
+firmware based on M5Unified/M5GFX. QEMU ships with the app. Source projects
+require either [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/methods/installer-script.html)
+or the optional [ESP-IDF Installation Manager](https://docs.espressif.com/projects/idf-im-ui/en/latest/),
+depending on project type. The app provides the same official download links
+and does not require Homebrew.
+
+This release focuses on normal firmware display and controls. It does not
+simulate Wi-Fi, Bluetooth, cloud services, USB, or ULP programs. Projects that
+access those peripherals directly, use custom display drivers, or bypass
+M5Unified/M5GFX may still need compatibility work. This product does not import
+precompiled `.bin` files from M5Burner or other sources. Bundled QEMU is only
+an internal execution backend for adapted source-build outputs.
 
 ## System requirements
 
@@ -101,6 +111,10 @@ but cannot execute directly inside the source-based macOS application.
 | Operating system | macOS 14 or later |
 | Source build | Xcode command-line tools and Swift 6 |
 | Display | Fixed application window; no horizontal or vertical page scrolling |
+| QEMU | Included with the app; no separate install required |
+| PlatformIO | Required for Arduino/PlatformIO source projects; the app provides an official download link |
+| ESP-IDF | Optional; required only for ESP-IDF source projects |
+| Network | Required to install build tools and new project dependencies; cached components are reused |
 
 ## Testing status and Windows support
 
@@ -122,12 +136,20 @@ but cannot execute directly inside the source-based macOS application.
 ### Release build
 
 Repository members can download
-`Stick-S3-Virtual-Device-v0.1.0-macOS-arm64.zip` from
+`Stick-S3-Virtual-Device-v0.2.0-macOS-arm64.zip` from
 [GitHub Releases](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases).
 
 1. Extract the ZIP on an Apple Silicon Mac.
 2. Drag **Stick S3 虚拟设备.app** into **Applications**.
 3. Open the application.
+
+For source projects, use the corresponding official download button in
+**Firmware Manager**:
+
+- Arduino / PlatformIO: [download PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/methods/installer-script.html)
+- ESP-IDF (optional): [download ESP-IDF Installation Manager](https://docs.espressif.com/projects/idf-im-ui/en/latest/)
+
+Return to the app and select **Check Again** after installation.
 
 The first private test build uses ad-hoc signing and is not yet notarized with
 Apple. External distribution should use Developer ID signing, Apple
@@ -142,12 +164,13 @@ notarization, and Gatekeeper verification.
 ## Quick start
 
 1. Launch the application.
-2. Select **Import firmware or project** and choose one project root,
-   `firmware/sticks3` directory, or ESP32 `.bin` file.
+2. Select **Import firmware or project** and choose an ESP-IDF or
+   PlatformIO/Arduino project root, a `firmware/sticks3` directory, an Arduino
+   `.ino` project directory.
 3. Open **Manage** to inspect compatibility and project status.
 4. Start a compatible firmware project.
-5. Use pose, motion, button, battery, and audio controls to exercise the
-   firmware.
+5. Use pose, motion, and physical-button controls to exercise the firmware
+   display and normal interactions.
 6. After changing firmware source, choose **Reload firmware**.
 
 Imported source directories are read-only references. Removing an entry from
@@ -174,6 +197,10 @@ the catalog does not delete or modify the original project.
 | Charging / Sound | Toggle charging and firmware audio |
 | 30 FPS / 60 FPS | Select display refresh rate |
 
+Available controls depend on the current firmware and runtime mode. Generic
+source-project compatibility focuses on the display, both physical buttons,
+and BMI270 pose input; controls that are not connected are disabled in the UI.
+
 Button bindings remain firmware-owned. A dimmed gesture is intentionally
 unbound; the simulator does not invent a behavior.
 
@@ -189,14 +216,15 @@ unbound; the simulator does not invent a behavior.
 
 ## Importing and reloading firmware
 
-- Import one project root, `firmware/sticks3` directory, or `.bin` file at
-  a time.
+- Import one ESP-IDF or PlatformIO/Arduino project root, a `firmware/sticks3`
+  directory or an Arduino `.ino` project directory at a time.
 - The application checks the project structure and reports whether it can run.
 - After source files change, use **Reload firmware** to refresh the project.
 - Imported directories remain read-only and are never modified by the app.
-- Projects that need additional compatibility work are clearly identified.
-- Raw ESP32 binaries can be cataloged and identified, but they cannot execute
-  inside the current source-based macOS host.
+- Projects that directly require Wi-Fi, Bluetooth, cloud services, USB, ULP,
+  or custom hardware drivers are clearly identified when further work is needed.
+- Precompiled `.bin` files are not imported; use a source project that the app
+  can copy and adapt privately.
 
 The project catalog is stored under
 `Application Support/Stick S3 Firmware Simulator/`. It remains outside the
@@ -214,7 +242,8 @@ synchronized workspace and outside Git.
 ├── Resources/
 │   ├── AppIcon-1024.png
 │   ├── Info.plist
-│   └── SplashAvatar.png
+│   ├── SplashAvatar.png
+│   └── VirtualBoard/
 ├── Sources/
 ├── Tests/
 ├── Vendor/
@@ -259,6 +288,8 @@ Local builds use ad-hoc signing by default. A distributor can explicitly set
 The application artwork is project-owned. LVGL, Montserrat, and imported
 firmware snapshots retain their upstream licenses and notices under
 `Vendor/Licenses/`, `NOTICE`, and `THIRD_PARTY_NOTICES.md`.
+Every public binary release must also attach the third-party source bundle
+generated by `scripts/prepare-third-party-sources.sh`.
 
 ## License
 

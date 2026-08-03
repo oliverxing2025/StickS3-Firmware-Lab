@@ -55,7 +55,7 @@ struct CodexBridgeClient {
         request.setValue("vibestick", forHTTPHeaderField: "X-Vibe-Stick-Firmware-Name")
         let appVersion = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "0.1.0"
+        ) as? String ?? "0.2.0"
         request.setValue("\(appVersion)-simulator",
                          forHTTPHeaderField: "X-Vibe-Stick-Firmware-Version")
         request.setValue("HTTP", forHTTPHeaderField: "X-Vibe-Stick-Firmware-Transport")

@@ -28,7 +28,15 @@ cp "$PROJECT_DIR/.build/release/StickS3Simulator" "$STAGED_APP/Contents/MacOS/St
 cp "$PROJECT_DIR/Resources/Info.plist" "$STAGED_APP/Contents/Info.plist"
 cp "$STAGE_ROOT/AppIcon.icns" "$STAGED_APP/Contents/Resources/AppIcon.icns"
 cp "$PROJECT_DIR/Resources/SplashAvatar.png" "$STAGED_APP/Contents/Resources/SplashAvatar.png"
+cp -R "$PROJECT_DIR/Resources/VirtualBoard" "$STAGED_APP/Contents/Resources/VirtualBoard"
+mkdir -p "$STAGED_APP/Contents/Resources/Licenses"
+cp "$PROJECT_DIR/LICENSE" "$STAGED_APP/Contents/Resources/Licenses/StickS3-Virtual-Device-LICENSE"
+cp "$PROJECT_DIR/NOTICE" "$STAGED_APP/Contents/Resources/Licenses/NOTICE"
+cp "$PROJECT_DIR/THIRD_PARTY_NOTICES.md" "$STAGED_APP/Contents/Resources/Licenses/THIRD_PARTY_NOTICES.md"
+cp -R "$PROJECT_DIR/Vendor/Licenses/." "$STAGED_APP/Contents/Resources/Licenses/"
 chmod 755 "$STAGED_APP/Contents/MacOS/StickS3Simulator"
+
+"$PROJECT_DIR/scripts/bundle-qemu.sh" "$STAGED_APP/Contents/Resources/Emulation"
 
 FINGERPRINT_TOOL="$PROJECT_DIR/.build/release/FirmwareFingerprintTool"
 for runtime in breakout fruit hourglass hourglassLiquid codex; do

@@ -111,7 +111,6 @@ public extension SimulatorRuntimeID {
 public enum SimulatorProjectCompatibility: String, Codable, Sendable {
     case ready
     case sourceNeedsAdapter
-    case binaryOnly
     case invalid
     case missing
 
@@ -120,12 +119,17 @@ public enum SimulatorProjectCompatibility: String, Codable, Sendable {
     public var title: String {
         switch self {
         case .ready: return "可模拟"
-        case .sourceNeedsAdapter: return "源码已识别，缺少模拟接口"
-        case .binaryOnly: return "仅识别，当前不可模拟"
+        case .sourceNeedsAdapter: return "源码已识别，可自动生成模拟接口"
         case .invalid: return "不是可识别的 Stick S3 项目"
         case .missing: return "原目录已不存在"
         }
     }
+}
+
+public enum SimulatorProjectFormat: String, Codable, Sendable {
+    case espIDF
+    case platformIO
+    case arduino
 }
 
 public enum SimulatorProjectOrigin: String, Codable, Sendable {
@@ -150,6 +154,7 @@ public struct SimulatorProjectReference: Codable, Identifiable, Equatable, Senda
     public var compatibility: SimulatorProjectCompatibility
     public var detail: String
     public var sourceFingerprint: String?
+    public var projectFormat: SimulatorProjectFormat?
     public var addedAt: Date
     public var lastCheckedAt: Date
 
@@ -163,6 +168,7 @@ public struct SimulatorProjectReference: Codable, Identifiable, Equatable, Senda
         compatibility: SimulatorProjectCompatibility,
         detail: String,
         sourceFingerprint: String? = nil,
+        projectFormat: SimulatorProjectFormat? = nil,
         addedAt: Date = Date(),
         lastCheckedAt: Date = Date()
     ) {
@@ -175,6 +181,7 @@ public struct SimulatorProjectReference: Codable, Identifiable, Equatable, Senda
         self.compatibility = compatibility
         self.detail = detail
         self.sourceFingerprint = sourceFingerprint
+        self.projectFormat = projectFormat
         self.addedAt = addedAt
         self.lastCheckedAt = lastCheckedAt
     }
@@ -263,24 +270,13 @@ public struct SimulatorProjectInspector {
         }
 
         if !isDirectory.boolValue {
-            let suffix = url.pathExtension.lowercased()
-            if suffix == "bin" {
-                return SimulatorProjectReference(
-                    displayName: url.deletingPathExtension().lastPathComponent,
-                    sourcePath: url.path,
-                    firmwarePath: nil,
-                    runtimeID: nil,
-                    compatibility: .binaryOnly,
-                    detail: "ESP32 二进制固件不能由当前 macOS 源码模拟器直接执行。"
-                )
-            }
             return SimulatorProjectReference(
                 displayName: url.deletingPathExtension().lastPathComponent,
                 sourcePath: url.path,
                 firmwarePath: nil,
                 runtimeID: nil,
                 compatibility: .invalid,
-                detail: "请选择项目目录，或选择用于识别的 .bin 固件。"
+                detail: "当前产品只导入 StickS3 源码工程目录，不导入已编译固件文件。"
             )
         }
 
@@ -292,15 +288,45 @@ public struct SimulatorProjectInspector {
                 firmwarePath: nil,
                 runtimeID: nil,
                 compatibility: .invalid,
-                detail: "未找到 firmware/sticks3，且所选目录不是 ESP-IDF 固件根目录。"
+                detail: "未找到 firmware/sticks3、ESP-IDF、PlatformIO 或 Arduino StickS3 工程结构。"
             )
         }
 
         let projectRoot = resolved.projectRoot
         let name = projectRoot.lastPathComponent
         let runtime = SimulatorRuntimeID.detect(projectName: name)
-        let hasMain = ["main.c", "main.cpp", "main.cc"].contains { file in
-            fileManager.fileExists(atPath: firmwareRoot.appendingPathComponent("src/\(file)").path)
+
+        if resolved.format == .platformIO || resolved.format == .arduino {
+            guard isStickS3Project(projectRoot: projectRoot, firmwareRoot: firmwareRoot, format: resolved.format) else {
+                return SimulatorProjectReference(
+                    displayName: name,
+                    sourcePath: projectRoot.path,
+                    firmwarePath: firmwareRoot.path,
+                    runtimeID: nil,
+                    compatibility: .invalid,
+                    detail: resolved.format == .platformIO
+                        ? "已找到 PlatformIO 工程，但未确认它以 M5Stack StickS3 为目标。"
+                        : "已找到 Arduino 工程，但未确认它使用 M5Stack StickS3/M5Unified。",
+                    projectFormat: resolved.format
+                )
+            }
+            return SimulatorProjectReference(
+                displayName: name,
+                sourcePath: projectRoot.path,
+                firmwarePath: firmwareRoot.path,
+                runtimeID: nil,
+                compatibility: .sourceNeedsAdapter,
+                detail: resolved.format == .platformIO
+                    ? "已识别 PlatformIO/Arduino StickS3 工程；点击“开始模拟”后会在私有副本中自动生成模拟接口，原项目不会被修改。"
+                    : "已识别 Arduino StickS3 工程；点击“开始模拟”后会在私有副本中自动生成模拟接口，原项目不会被修改。",
+                projectFormat: resolved.format
+            )
+        }
+
+        let hasMain = ["src", "main"].contains { directory in
+            ["main.c", "main.cpp", "main.cc"].contains { file in
+                fileManager.fileExists(atPath: firmwareRoot.appendingPathComponent("\(directory)/\(file)").path)
+            }
         }
         let hasCMake = fileManager.fileExists(atPath: firmwareRoot.appendingPathComponent("CMakeLists.txt").path)
 
@@ -311,7 +337,8 @@ public struct SimulatorProjectInspector {
                 firmwarePath: firmwareRoot.path,
                 runtimeID: nil,
                 compatibility: .invalid,
-                detail: "固件目录缺少 CMakeLists.txt 或 src/main.c/main.cpp。"
+                detail: "固件目录缺少 CMakeLists.txt 或 src/main.* / main/main.* 入口文件。",
+                projectFormat: .espIDF
             )
         }
 
@@ -334,7 +361,8 @@ public struct SimulatorProjectInspector {
                 runtimeID: runtime,
                 compatibility: .ready,
                 detail: "当前应用由该版本源码构建；导入只保存只读目录引用。",
-                sourceFingerprint: sourceFingerprint
+                sourceFingerprint: sourceFingerprint,
+                projectFormat: .espIDF
             )
         }
 
@@ -344,28 +372,130 @@ public struct SimulatorProjectInspector {
             firmwarePath: firmwareRoot.path,
             runtimeID: runtime,
             compatibility: .sourceNeedsAdapter,
-            detail: runtime == nil
-                ? "项目结构有效，但尚未提供模拟器测试接口；不会自动修改源码。"
-                : (sourceFingerprint == nil
-                   ? "项目名称已识别，但缺少该适配器需要的源码文件。"
-                   : "固件源码与当前虚拟设备中的版本不同，请点“重新载入固件”。"),
-            sourceFingerprint: sourceFingerprint
+            detail: "已识别 ESP-IDF StickS3 工程；点击“开始模拟”后会在私有副本中自动生成模拟接口，原项目不会被修改。",
+            sourceFingerprint: sourceFingerprint,
+            projectFormat: .espIDF
         )
     }
 
-    private func resolveProjectAndFirmwareRoot(_ url: URL) -> (projectRoot: URL, firmwareRoot: URL?) {
+    private func resolveProjectAndFirmwareRoot(_ url: URL) -> (
+        projectRoot: URL,
+        firmwareRoot: URL?,
+        format: SimulatorProjectFormat?
+    ) {
+        let direct = resolveDirectProjectAndFirmwareRoot(url)
+        if direct.firmwareRoot != nil { return direct }
+
+        // GitHub archives and project kits commonly add one container folder
+        // above the actual firmware project. Accept that folder and resolve a
+        // single immediate child project instead of making the user discover
+        // and import the inner directory manually.
+        let children = (try? fileManager.contentsOfDirectory(
+            at: url,
+            includingPropertiesForKeys: [.isDirectoryKey],
+            options: [.skipsHiddenFiles]
+        )) ?? []
+        let ignored = Set(["build", ".build", ".pio", ".git", "node_modules"])
+        let nestedProjects = children.compactMap { child -> (
+            projectRoot: URL, firmwareRoot: URL?, format: SimulatorProjectFormat?
+        )? in
+            guard !ignored.contains(child.lastPathComponent),
+                  (try? child.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+                return nil
+            }
+            let resolved = resolveDirectProjectAndFirmwareRoot(child)
+            return resolved.firmwareRoot == nil ? nil : resolved
+        }.sorted { $0.projectRoot.lastPathComponent.localizedStandardCompare(
+            $1.projectRoot.lastPathComponent) == .orderedAscending }
+        if nestedProjects.count == 1 { return nestedProjects[0] }
+        return direct
+    }
+
+    private func resolveDirectProjectAndFirmwareRoot(_ url: URL) -> (
+        projectRoot: URL,
+        firmwareRoot: URL?,
+        format: SimulatorProjectFormat?
+    ) {
         let nested = url.appendingPathComponent("firmware/sticks3", isDirectory: true)
         if fileManager.fileExists(atPath: nested.appendingPathComponent("CMakeLists.txt").path) {
-            return (url, nested)
+            return (url, nested, .espIDF)
         }
         if fileManager.fileExists(atPath: url.appendingPathComponent("CMakeLists.txt").path),
-           fileManager.fileExists(atPath: url.appendingPathComponent("src").path) {
+           (fileManager.fileExists(atPath: url.appendingPathComponent("src").path)
+            || fileManager.fileExists(atPath: url.appendingPathComponent("main").path)) {
             if url.lastPathComponent == "sticks3", url.deletingLastPathComponent().lastPathComponent == "firmware" {
-                return (url.deletingLastPathComponent().deletingLastPathComponent(), url)
+                return (url.deletingLastPathComponent().deletingLastPathComponent(), url, .espIDF)
             }
-            return (url, url)
+            return (url, url, .espIDF)
         }
-        return (url, nil)
+        if fileManager.fileExists(atPath: url.appendingPathComponent("platformio.ini").path),
+           hasSourceEntryPoint(in: url.appendingPathComponent("src", isDirectory: true)) {
+            return (url, url, .platformIO)
+        }
+        if containsArduinoSketch(in: url) {
+            return (url, url, .arduino)
+        }
+        return (url, nil, nil)
+    }
+
+    private func hasSourceEntryPoint(in sourceRoot: URL) -> Bool {
+        ["main.c", "main.cpp", "main.cc", "main.ino"].contains {
+            fileManager.fileExists(atPath: sourceRoot.appendingPathComponent($0).path)
+        }
+    }
+
+    private func containsArduinoSketch(in root: URL) -> Bool {
+        guard let entries = try? fileManager.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else { return false }
+        return entries.contains { $0.pathExtension.lowercased() == "ino" }
+    }
+
+    private func isStickS3Project(
+        projectRoot: URL,
+        firmwareRoot: URL,
+        format: SimulatorProjectFormat?
+    ) -> Bool {
+        var candidates: [URL] = []
+        if format == .platformIO {
+            candidates.append(projectRoot.appendingPathComponent("platformio.ini"))
+            let sourceRoot = firmwareRoot.appendingPathComponent("src", isDirectory: true)
+            if let sourceFiles = try? fileManager.contentsOfDirectory(
+                at: sourceRoot,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                candidates.append(contentsOf: sourceFiles.filter {
+                    ["c", "cc", "cpp", "h", "hpp", "ino"].contains($0.pathExtension.lowercased())
+                })
+            }
+        } else {
+            if let entries = try? fileManager.contentsOfDirectory(
+                at: projectRoot,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) {
+                candidates.append(contentsOf: entries.filter { $0.pathExtension.lowercased() == "ino" })
+            }
+        }
+
+        let markers = [
+            "m5stack-sticks3",
+            "board_m5stick_s3",
+            "m5sticks3",
+            "m5stick s3",
+            "m5unified",
+        ]
+        return candidates.contains { candidate in
+            guard let values = try? candidate.resourceValues(forKeys: [.fileSizeKey]),
+                  let fileSize = values.fileSize,
+                  fileSize <= 2_000_000,
+                  let data = try? Data(contentsOf: candidate, options: [.mappedIfSafe]),
+                  let text = String(data: data, encoding: .utf8)?.lowercased() else { return false }
+            return markers.contains { text.contains($0) }
+        }
     }
 }
 

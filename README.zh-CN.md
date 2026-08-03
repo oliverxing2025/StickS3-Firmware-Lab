@@ -2,13 +2,13 @@
   <h1>Stick S3 虚拟设备</h1>
   <p><strong>面向 M5Stack StickS3 固件的原生 macOS 虚拟设备</strong></p>
   <p>
-    直接运行真实固件渲染、交互逻辑、姿态输入、按键、声音时序与<br>
-    RGB565 帧缓冲，不在 SwiftUI 中另画一套相似界面。
+    在私有副本中构建兼容的 StickS3 源码工程，并将固件画面、<br>
+    实体按键和 BMI270 姿态输入接入同一个 macOS 控制台。
   </p>
   <p>
     <a href="#项目概览">项目概览</a> ·
-    <a href="#v010-更新">v0.1.0</a> ·
-    <a href="#支持大部分-sticks3-固件">固件兼容</a> ·
+    <a href="#v020-更新">v0.2.0</a> ·
+    <a href="#sticks3-源码工程兼容">固件兼容</a> ·
     <a href="#完整控制">完整控制</a> ·
     <a href="#安装">安装</a> ·
     <a href="#测试状态与-windows-支持">支持说明</a> ·
@@ -19,18 +19,17 @@
     <img alt="平台：macOS 14+" src="https://img.shields.io/badge/platform-macOS%2014%2B-111111">
     <img alt="架构：Apple Silicon" src="https://img.shields.io/badge/architecture-Apple%20Silicon-5A5A5A">
     <img alt="Swift：6" src="https://img.shields.io/badge/Swift-6-F05138">
-    <img alt="版本：0.1.0" src="https://img.shields.io/badge/version-0.1.0-2F80ED">
+    <img alt="版本：0.2.0" src="https://img.shields.io/badge/version-0.2.0-2F80ED">
     <img alt="模式：本地优先" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
 </div>
 
-## v0.1.0 更新
+## v0.2.0 更新
 
-发布于 2026 年 8 月 3 日。仓库成员可在
-[v0.1.0 发布页](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases/tag/v0.1.0)
-下载安装包并查看完整说明。
+当前私有测试版更新于 2026 年 8 月 3 日。完成正式签名、公证和
+发布门禁后，安装包将在 GitHub Releases 提供。
 
-- **广泛固件导入：**将大部分 StickS3 源码项目加入本机目录，并在运行前检查兼容状态。
+- **源码工程模拟：**已完成 ESP-IDF、PlatformIO 和 Arduino 源码工程的构建、画面、按键与 BMI270 端到端验证。
 - **整机姿态模拟：**正放、左转 90°、右转 90°、反放会同时旋转机身、屏幕和实体按键。
 - **固定桌面视口：**页面不能上下或左右滚动，完整控制区始终保持在同一个窗口内。
 - **安全项目重载：**固件源码变化后可以重新载入，不修改原项目文件。
@@ -46,8 +45,8 @@ Stick S3 虚拟设备是用于导入、运行和操作 StickS3 固件项目的�
 
 | | 能力 | 作用 |
 | --- | --- | --- |
-| **01** | 广泛固件导入 | 将大部分 StickS3 源码项目加入本机目录，检查兼容状态并进行模拟 |
-| **02** | 完整设备控制 | 模拟 BMI270 重力轴、两个实体按键、电量、充电、声音和刷新率 |
+| **01** | 源码工程导入 | 将兼容的 StickS3 源码工程加入本机目录，识别构建体系并检查模拟兼容状态 |
+| **02** | 常规显示与操作 | 为兼容的源码工程接入固件画面、两个实体按键和 BMI270 姿态输入 |
 | **03** | 安全项目重载 | 源码变化后重新载入，不修改原始项目目录 |
 | **04** | 本地数据优先 | 导入路径、设置和测试数据保留在 Mac 本机，不上传到网络服务 |
 
@@ -66,7 +65,7 @@ Stick S3 虚拟设备是用于导入、运行和操作 StickS3 固件项目的�
 - 将完整虚拟设备旋转为四种支持姿态。
 - 通过控制台独立调整 X、Y、Z 重力方向。
 - 触发两个实体按键的单击、双击、三击、四击和长按。
-- 调整电量、充电、声音、亮度和 30/60 FPS 状态。
+- 在当前固件支持时调整电量、充电、声音、亮度和刷新率状态。
 - 暂停模拟或重启当前固件，不必重启应用。
 - 查看分区容量和应用镜像资源使用情况。
 - 查看重新载入进度和日志。
@@ -75,16 +74,22 @@ Stick S3 虚拟设备是用于导入、运行和操作 StickS3 固件项目的�
   <img src="assets/screenshots/landscape-control-console.png" alt="固件横屏运行及虚拟姿态和设备控制" width="1000">
 </div>
 
-## 支持大部分 StickS3 固件
+## StickS3 源码工程兼容
 
-本应用面向大部分 StickS3 固件源码项目设计。用户可以导入项目根目录或
-`firmware/sticks3` 目录，检查源码结构和资源占用，并通过统一的固件目录
-进行管理。
+本应用面向常见 StickS3 固件源码项目设计。用户可以导入 ESP-IDF 项目根目录、
+`firmware/sticks3` 目录、带 `platformio.ini` 的 PlatformIO/Arduino 工程，或
+包含 `.ino` 草图的 Arduino 工程，并通过统一的固件目录检查和管理。
 
-使用常见 RGB565 或 LVGL 渲染、实体按键、BMI270 姿态和声音接口的项目，
-通常可以直接模拟。应用会检查每个导入项目，并明确报告它是否可以运行或需要
-兼容性更新。ESP32 原始 `.bin` 文件可以登记和识别，但不能在当前源码型
-macOS 应用中直接执行。
+应用会在原工程之外创建私有构建副本，并为采用 M5Unified/M5GFX 的常见 StickS3
+固件接入屏幕、两个实体按键和 BMI270 姿态桥接。QEMU 已随应用提供；源码工程需要
+用户按项目类型自行安装 [PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/methods/installer-script.html)
+或可选的 [ESP-IDF Installation Manager](https://docs.espressif.com/projects/idf-im-ui/en/latest/)。
+应用内提供相同的官方下载入口，不要求使用 Homebrew。
+
+本版本聚焦普通固件的画面与常规操作，不模拟 Wi-Fi、蓝牙、云服务、USB 和 ULP
+程序。直接访问这些外设、采用自定义显示驱动或不使用 M5Unified/M5GFX 的项目，
+仍可能需要进一步兼容。本产品不导入 M5Burner 或其他渠道提供的已编译 `.bin`；
+内置 QEMU 仅作为适配后源码构建结果的内部执行后端。
 
 ## 系统要求
 
@@ -94,6 +99,10 @@ macOS 应用中直接执行。
 | 操作系统 | macOS 14 或更高版本 |
 | 源码构建 | Xcode 命令行工具与 Swift 6 |
 | 页面 | 固定应用窗口，不允许上下或左右滚动 |
+| QEMU | 随应用提供，无需另行安装 |
+| PlatformIO | Arduino/PlatformIO 源码工程需要；应用内提供官方下载入口 |
+| ESP-IDF | 仅 ESP-IDF 源码工程需要；属于可选安装 |
+| 网络 | 安装构建工具及项目新增依赖时需要联网；已缓存组件会复用 |
 
 ## 测试状态与 Windows 支持
 
@@ -112,11 +121,18 @@ macOS 应用中直接执行。
 
 仓库成员可从
 [GitHub Releases](https://github.com/oliverxing2025/StickS3-Virtual-Device/releases)
-下载 `Stick-S3-Virtual-Device-v0.1.0-macOS-arm64.zip`。
+下载 `Stick-S3-Virtual-Device-v0.2.0-macOS-arm64.zip`。
 
 1. 在 Apple Silicon Mac 上解压 ZIP。
 2. 将“Stick S3 虚拟设备.app”拖入“应用程序”。
 3. 打开应用。
+
+如果要导入源码工程，请在“固件管理”中使用对应的官方下载按钮：
+
+- 普通 Arduino / PlatformIO 工程：[下载 PlatformIO Core](https://docs.platformio.org/en/latest/core/installation/methods/installer-script.html)
+- ESP-IDF 工程（可选）：[下载 ESP-IDF Installation Manager](https://docs.espressif.com/projects/idf-im-ui/en/latest/)
+
+安装完成后返回应用点击“重新检测”。
 
 首个私有测试版使用 ad-hoc 签名，尚未完成 Apple 公证。对外分发前应使用
 Developer ID 签名、Apple 公证和 Gatekeeper 验证。
@@ -130,10 +146,10 @@ Developer ID 签名、Apple 公证和 Gatekeeper 验证。
 ## 快速开始
 
 1. 启动应用。
-2. 选择“导入固件或项目”，指定一个项目根目录、`firmware/sticks3` 目录或 ESP32 `.bin` 文件。
+2. 选择“导入固件或项目”，指定 ESP-IDF、PlatformIO/Arduino 项目根目录、`firmware/sticks3` 目录或 `.ino` 工程目录。
 3. 打开“管理”检查兼容性与项目状态。
 4. 启动兼容的固件项目。
-5. 使用姿态、重力、按键、电量和声音控制测试固件。
+5. 使用姿态、重力和实体按键测试固件画面与常规操作。
 6. 固件源码变化后选择“重新载入固件”。
 
 导入目录只作为只读引用。把条目从目录中删除不会删除或修改原项目。
@@ -159,6 +175,9 @@ Developer ID 签名、Apple 公证和 Gatekeeper 验证。
 | 充电 / 声音 | 切换充电与固件声音 |
 | 30 FPS / 60 FPS | 选择屏幕刷新率 |
 
+具体控制项取决于当前固件和运行模式。通用源码工程兼容模式聚焦画面、
+两个实体按键和 BMI270 姿态输入；未接入的控制会在界面中禁用。
+
 按键功能由固件定义。淡显手势表示当前没有绑定，模拟器不会伪造功能。
 
 ### 键盘
@@ -173,12 +192,12 @@ Developer ID 签名、Apple 公证和 Gatekeeper 验证。
 
 ## 导入与重新载入固件
 
-- 每次导入一个项目根目录、`firmware/sticks3` 目录或 `.bin` 文件。
+- 每次导入一个 ESP-IDF、PlatformIO/Arduino 项目根目录、`firmware/sticks3` 目录或 `.ino` 工程目录。
 - 应用会检查项目结构并报告它是否可以运行。
 - 源码变化后，使用“重新载入固件”刷新项目。
 - 导入目录始终保持只读，应用不会修改原始文件。
-- 需要进一步兼容处理的项目会得到明确提示。
-- ESP32 原始二进制可以登记和识别，但不能在当前源码型 macOS 主机中直接执行。
+- 需要直接访问 Wi-Fi、蓝牙、云服务、USB、ULP 或自定义硬件驱动的项目会得到明确提示。
+- 不导入已编译 `.bin`；请使用可供应用创建私有适配副本的源码工程。
 
 项目目录保存在
 `Application Support/Stick S3 Firmware Simulator/`，不进入同步工作区或 Git。
@@ -195,7 +214,8 @@ Developer ID 签名、Apple 公证和 Gatekeeper 验证。
 ├── Resources/
 │   ├── AppIcon-1024.png
 │   ├── Info.plist
-│   └── SplashAvatar.png
+│   ├── SplashAvatar.png
+│   └── VirtualBoard/
 ├── Sources/
 ├── Tests/
 ├── Vendor/
@@ -237,6 +257,8 @@ swift test
 
 应用美术由项目自有。LVGL、Montserrat 和导入固件快照保留各自上游许可证，
 详见 `Vendor/Licenses/`、`NOTICE` 与 `THIRD_PARTY_NOTICES.md`。
+公开发布的安装包必须同时附带
+`scripts/prepare-third-party-sources.sh` 生成的第三方源码包。
 
 ## 许可证
 

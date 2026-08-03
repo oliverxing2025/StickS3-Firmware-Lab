@@ -43,13 +43,7 @@ enum VirtualProject: String, CaseIterable, Identifiable {
     }
 
     var fidelityStatus: String {
-        switch self {
-        case .breakout: return "同源渲染 · 真实逻辑 · 像素基准已验证"
-        case .fruit: return "同源 main.c · 真实逻辑 · RGB565 原始帧"
-        case .hourglass: return "同源 LVGL · 真实粒子物理 · RGB565 原始帧"
-        case .hourglassLiquid: return "同源 LVGL · 真实液态沙粒 · RGB565 原始帧"
-        case .codex: return "同源 main.c · 真实 LVGL · 像素基准已验证"
-        }
+        "固件画面 · 实体按键 · 姿态输入"
     }
 
     init?(runtimeID: SimulatorRuntimeID) {
@@ -144,9 +138,9 @@ final class SimulatorModel: ObservableObject {
     @Published var hourglassSnapshot = HourglassSnapshot()
     @Published var hourglassLiquidSnapshot = HourglassLiquidSnapshot()
     @Published var codexFrameRGBA = Data()
-    @Published var tilt: Double = 0
-    @Published var tiltY: Double = 0
-    @Published var tiltZ: Double = 1
+    @Published var tilt: Double = 0 { didSet { sendQEMUMotionIfReady() } }
+    @Published var tiltY: Double = 0 { didSet { sendQEMUMotionIfReady() } }
+    @Published var tiltZ: Double = 1 { didSet { sendQEMUMotionIfReady() } }
     @Published var batteryPercent: Double = 86
     @Published var batteryCharging = true
     @Published var screenBrightnessPercent: Double = 100
@@ -176,6 +170,15 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var lastSuccessfulRebuild: Date?
     @Published private(set) var resourceMetrics = SimulatorResourceMetrics()
     @Published private(set) var measuredSimulatorFPS = 0.0
+    @Published private(set) var qemuState: StickS3QEMUState = .unavailable
+    @Published private(set) var qemuLog = ""
+    @Published private(set) var qemuFirmwareName: String?
+    @Published private(set) var qemuFrameRGBA = Data()
+    @Published private(set) var qemuFrameWidth = 135
+    @Published private(set) var qemuFrameHeight = 240
+    @Published private(set) var qemuBoardCapabilities: StickS3VirtualBoardCapabilities = []
+    @Published private(set) var platformIOIsAvailable = false
+    @Published private(set) var espIDFIsAvailable = false
 
     private var context: UnsafeMutableRawPointer?
     private var fruitContext: UnsafeMutableRawPointer?
@@ -206,6 +209,13 @@ final class SimulatorModel: ObservableObject {
     private let firmwareCatalogComposer = SimulatorFirmwareCatalogComposer()
     private let resourceInspector = SimulatorResourceInspector()
     private var rebuildProcess: Process?
+    private var firmwareBuildProcess: Process?
+    private var firmwareBuildPipe: Pipe?
+    private var qemuProcess: Process?
+    private var qemuConsolePipe: Pipe?
+    private var qemuInputPipe: Pipe?
+    private var qemuWorkingFlashURL: URL?
+    private var qemuBoardParser = StickS3VirtualBoardStreamParser()
     private let deviceAudio = DeviceAudioEngine()
     private var poseAudioMutedUntil = 0.0
     private var audioPlaybackAllowed: Bool {
@@ -279,6 +289,8 @@ final class SimulatorModel: ObservableObject {
         refreshHourglassSnapshot(liquid: true)
         syncCodexFirmwareState(nowMs: 0)
         refreshResourceMetrics()
+        refreshQEMUAvailability()
+        refreshBuildToolStatus()
     }
 
     isolated deinit {
@@ -290,6 +302,7 @@ final class SimulatorModel: ObservableObject {
         hourglass_destroy(hourglassContext)
         hourglass_liquid_destroy(hourglassLiquidContext)
         codex_firmware_destroy(codexFirmwareContext)
+        stopQEMU()
     }
 
     func rebuildSimulator() {
@@ -463,14 +476,326 @@ final class SimulatorModel: ObservableObject {
         )
     }
 
-    var hasImportedFirmware: Bool { !visibleProjects.isEmpty }
+    var hasImportedFirmware: Bool { !firmwareCatalog.isEmpty }
+    var hasSelectableFirmware: Bool { !visibleProjects.isEmpty }
+    var needsSimulatorAdapter: Bool { hasImportedFirmware && !hasSelectableFirmware }
     var hasRunnableFirmware: Bool {
         selectedSourceProject?.compatibility == .ready
+    }
+    var hasActiveQEMUFirmware: Bool { qemuState.isActive && qemuFirmwareName != nil }
+    var qemuDisplayReady: Bool {
+        qemuBoardCapabilities.contains(.display)
+            && qemuFrameRGBA.count == qemuFrameWidth * qemuFrameHeight * 4
+    }
+    var qemuControlsReady: Bool {
+        qemuBoardCapabilities.contains(.buttons) || qemuBoardCapabilities.contains(.bmi270)
+    }
+    var qemuIsAvailable: Bool { StickS3QEMUDiscovery().locate() != nil }
+
+    func canStartQEMU(_ item: SimulatorFirmwareCatalogItem) -> Bool {
+        guard qemuIsAvailable,
+              let referenceID = item.projectReferenceID,
+              let project = testProjects.first(where: { $0.id == referenceID }) else { return false }
+        return StickS3FirmwareBuildPlanner().canBuild(project)
+    }
+
+    func startQEMU(referenceID: UUID) {
+        guard let project = testProjects.first(where: { $0.id == referenceID }) else { return }
+        guard let installation = StickS3QEMUDiscovery().locate() else {
+            qemuState = .unavailable
+            qemuLog = "应用内未找到 ESP32-S3 QEMU 运行时。\n"
+            return
+        }
+        stopQEMU()
+        qemuLog = ""
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("Stick S3 Firmware Simulator/QEMU Sessions", isDirectory: true)
+            .appendingPathComponent(project.id.uuidString, isDirectory: true)
+        buildFirmwareAndLaunch(project: project, installation: installation, support: support)
+    }
+
+    private func buildFirmwareAndLaunch(
+        project: SimulatorProjectReference,
+        installation: StickS3QEMUInstallation,
+        support: URL
+    ) {
+        if StickS3FirmwareToolDiscovery().locate(for: project.projectFormat) == nil {
+            qemuState = .failed
+            qemuFirmwareName = project.displayName
+            switch project.projectFormat {
+            case .platformIO, .arduino:
+                qemuLog = "尚未检测到 PlatformIO。请在固件管理中打开官方下载页，安装后点击“重新检测”。\nPlatformIO 自己会缓存基础组件；不同项目只会补充各自新增的库。\n"
+            case .espIDF:
+                qemuLog = "尚未检测到可选的 ESP-IDF 构建环境。请在固件管理中打开 Espressif 官方下载页，安装后点击“重新检测”。\n"
+            case .none:
+                qemuLog = "该导入内容无法自动构建。\n"
+            }
+            return
+        }
+        do {
+            try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+            let buildCache = support.appendingPathComponent("BuildCache", isDirectory: true)
+            try FileManager.default.createDirectory(at: buildCache, withIntermediateDirectories: true)
+            let buildSource = try StickS3FirmwareBuildWorkspace().prepare(
+                project: project,
+                at: buildCache.appendingPathComponent("Source", isDirectory: true)
+            )
+            try StickS3VirtualBoardInjector().inject(into: buildSource)
+            let plan = try StickS3FirmwareBuildPlanner().makePlan(for: buildSource, cacheDirectory: buildCache)
+            qemuState = .starting
+            qemuFirmwareName = project.displayName
+            qemuLog = "已创建只读导入项目的私有构建副本。\n正在使用 \(plan.tool.title) 构建 \(project.displayName)…\n"
+            runFirmwareBuildStage(
+                plan: plan,
+                arguments: plan.preflightArguments ?? plan.arguments,
+                isPreflight: plan.preflightArguments != nil,
+                project: project,
+                installation: installation,
+                support: support
+            )
+        } catch {
+            firmwareBuildProcess = nil
+            firmwareBuildPipe = nil
+            qemuState = .failed
+            qemuFirmwareName = project.displayName
+            qemuLog += "无法构建固件：\(error.localizedDescription)\n"
+        }
+    }
+
+    private func runFirmwareBuildStage(
+        plan: StickS3FirmwareBuildPlan,
+        arguments: [String],
+        isPreflight: Bool,
+        project: SimulatorProjectReference,
+        installation: StickS3QEMUInstallation,
+        support: URL
+    ) {
+        let process = Process()
+        let output = Pipe()
+        process.executableURL = plan.executableURL
+        process.arguments = arguments
+        process.environment = plan.environment
+        process.currentDirectoryURL = plan.workingDirectoryURL
+        process.standardOutput = output
+        process.standardError = output
+        firmwareBuildProcess = process
+        firmwareBuildPipe = output
+        output.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            let data = handle.availableData
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
+            Task { @MainActor [weak self] in self?.appendQEMULog(text) }
+        }
+        process.terminationHandler = { [weak self] finished in
+            output.fileHandleForReading.readabilityHandler = nil
+            Task { @MainActor [weak self] in
+                guard let self, self.firmwareBuildProcess === finished else { return }
+                self.firmwareBuildProcess = nil
+                self.firmwareBuildPipe = nil
+                guard finished.terminationStatus == 0 else {
+                    self.qemuState = .failed
+                    self.appendQEMULog("\n固件构建失败，退出码：\(finished.terminationStatus)\n")
+                    return
+                }
+                if isPreflight {
+                    self.appendQEMULog("\n依赖准备完成，正在接入 StickS3 屏幕与控制桥接…\n")
+                    self.runFirmwareBuildStage(
+                        plan: plan,
+                        arguments: plan.arguments,
+                        isPreflight: false,
+                        project: project,
+                        installation: installation,
+                        support: support
+                    )
+                } else {
+                    self.appendQEMULog("\n构建成功，正在合并并校验完整 Flash…\n")
+                    self.launchQEMU(project: project, imageProject: plan.artifactProject,
+                                    installation: installation, support: support)
+                }
+            }
+        }
+        do {
+            try process.run()
+        } catch {
+            firmwareBuildProcess = nil
+            firmwareBuildPipe = nil
+            qemuState = .failed
+            appendQEMULog("无法启动构建工具：\(error.localizedDescription)\n")
+        }
+    }
+
+    func refreshBuildToolStatus() {
+        let discovery = StickS3FirmwareToolDiscovery()
+        platformIOIsAvailable = discovery.locate(for: .platformIO) != nil
+        espIDFIsAvailable = discovery.locate(for: .espIDF) != nil
+    }
+
+    func openPlatformIODownload() {
+        NSWorkspace.shared.open(URL(string: "https://docs.platformio.org/en/latest/core/installation/methods/installer-script.html")!)
+    }
+
+    func openESPIDFDownload() {
+        NSWorkspace.shared.open(URL(string: "https://docs.espressif.com/projects/idf-im-ui/en/latest/")!)
+    }
+
+    private func launchQEMU(
+        project: SimulatorProjectReference,
+        imageProject: SimulatorProjectReference,
+        installation: StickS3QEMUInstallation,
+        support: URL
+    ) {
+        do {
+            try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+            let sourceImage = try StickS3QEMUImageResolver().prepare(for: imageProject, cacheDirectory: support)
+            let sourceSnapshot = support.appendingPathComponent("source-flash.bin")
+            let workingFlash = support.appendingPathComponent("working-flash.bin")
+            let sourceChanged = !FileManager.default.fileExists(atPath: sourceSnapshot.path)
+                || !FileManager.default.contentsEqual(atPath: sourceImage.path, andPath: sourceSnapshot.path)
+            if sourceChanged {
+                for destination in [sourceSnapshot, workingFlash] {
+                    if FileManager.default.fileExists(atPath: destination.path) {
+                        try FileManager.default.removeItem(at: destination)
+                    }
+                    try FileManager.default.copyItem(at: sourceImage, to: destination)
+                }
+            } else if !FileManager.default.fileExists(atPath: workingFlash.path) {
+                try FileManager.default.copyItem(at: sourceSnapshot, to: workingFlash)
+            }
+            let command = try StickS3QEMUCommandBuilder().makeCommand(
+                installation: installation,
+                flashImageURL: workingFlash
+            )
+
+            let process = Process()
+            let console = Pipe()
+            let input = Pipe()
+            process.executableURL = command.executableURL
+            process.arguments = command.arguments
+            process.environment = command.environment
+            process.standardOutput = console
+            process.standardError = console
+            process.standardInput = input
+
+            qemuState = .starting
+            qemuFirmwareName = project.displayName
+            appendQEMULog(sourceChanged
+                ? "已生成并校验完整 Flash，正在启动：\(project.displayName)\n"
+                : "正在使用已保存的固件状态启动：\(project.displayName)\n")
+            qemuProcess = process
+            qemuConsolePipe = console
+            qemuInputPipe = input
+            qemuWorkingFlashURL = workingFlash
+
+            qemuBoardParser = StickS3VirtualBoardStreamParser()
+            qemuBoardCapabilities = []
+            qemuFrameRGBA = Data()
+            console.fileHandleForReading.readabilityHandler = { [weak self] handle in
+                let data = handle.availableData
+                guard !data.isEmpty else { return }
+                Task { @MainActor [weak self] in self?.handleQEMUOutput(data) }
+            }
+            process.terminationHandler = { [weak self] finished in
+                console.fileHandleForReading.readabilityHandler = nil
+                Task { @MainActor [weak self] in
+                    guard let self, self.qemuProcess === finished else { return }
+                    self.qemuProcess = nil
+                    self.qemuConsolePipe = nil
+                    self.qemuInputPipe = nil
+                    if self.qemuState != .stopped {
+                        self.qemuState = finished.terminationStatus == 0 ? .stopped : .failed
+                        self.appendQEMULog("\nQEMU 已退出，状态码：\(finished.terminationStatus)\n")
+                    }
+                }
+            }
+            try process.run()
+            appendQEMULog("等待固件进入应用调度器…\n")
+        } catch {
+            qemuProcess = nil
+            qemuConsolePipe = nil
+            qemuInputPipe = nil
+            qemuState = .failed
+            appendQEMULog("启动失败：\(error.localizedDescription)\n")
+        }
+    }
+
+    func stopQEMU() {
+        firmwareBuildPipe?.fileHandleForReading.readabilityHandler = nil
+        if let process = firmwareBuildProcess, process.isRunning { process.terminate() }
+        firmwareBuildProcess = nil
+        firmwareBuildPipe = nil
+        qemuConsolePipe?.fileHandleForReading.readabilityHandler = nil
+        if let process = qemuProcess, process.isRunning { process.terminate() }
+        qemuProcess = nil
+        qemuConsolePipe = nil
+        qemuInputPipe = nil
+        qemuBoardCapabilities = []
+        qemuFrameRGBA = Data()
+        if qemuState.isActive { qemuState = .stopped }
+    }
+
+    private func refreshQEMUAvailability() {
+        if qemuProcess?.isRunning == true { qemuState = .running }
+        else { qemuState = qemuIsAvailable ? .stopped : .unavailable }
+    }
+
+    private func appendQEMULog(_ output: String) {
+        qemuLog += output
+        if qemuLog.count > 80_000 { qemuLog = String(qemuLog.suffix(80_000)) }
+        if qemuState == .starting {
+            let normalized = output.lowercased()
+            if normalized.contains("cpu_start: starting scheduler")
+                || normalized.contains("main_task: started on cpu")
+                || normalized.contains("calling app_main") {
+                qemuState = .running
+                eventText = "QEMU FIRMWARE BOOTED"
+            }
+        }
+    }
+
+    private func handleQEMUOutput(_ data: Data) {
+        for event in qemuBoardParser.append(data) {
+            switch event {
+            case .ready(let capabilities):
+                qemuBoardCapabilities = capabilities
+                qemuState = .running
+                eventText = "QEMU FIRMWARE BOOTED"
+                appendQEMULog("\nStickS3 屏幕与控制桥接已就绪。\n")
+            case .frame(let frame):
+                qemuFrameWidth = frame.width
+                qemuFrameHeight = frame.height
+                qemuFrameRGBA = rgbaData(fromRGB565LE: frame.rgb565)
+            case .log(let bytes):
+                guard let text = String(data: bytes, encoding: .utf8) else { continue }
+                appendQEMULog(text)
+            }
+        }
+    }
+
+    private func sendQEMUPacket(_ packet: Data) {
+        guard qemuState == .running, qemuBoardCapabilities.contains(.buttons) || qemuBoardCapabilities.contains(.bmi270) else { return }
+        do { try qemuInputPipe?.fileHandleForWriting.write(contentsOf: packet) }
+        catch { appendQEMULog("\n控制输入发送失败：\(error.localizedDescription)\n") }
+    }
+
+    private func sendQEMUMotionIfReady() {
+        guard qemuBoardCapabilities.contains(.bmi270) else { return }
+        sendQEMUPacket(StickS3VirtualBoardPacketEncoder().motion(
+            x: Float(tilt), y: Float(tiltY), z: Float(tiltZ)))
+    }
+
+    private func rgbaData(fromRGB565LE pixels: Data) -> Data {
+        var rgba = Data(capacity: pixels.count * 2)
+        for offset in stride(from: 0, to: pixels.count - 1, by: 2) {
+            let value = UInt16(pixels[offset]) | (UInt16(pixels[offset + 1]) << 8)
+            rgba.append(UInt8((UInt32(value >> 11) * 255 + 15) / 31))
+            rgba.append(UInt8((UInt32((value >> 5) & 0x3F) * 255 + 31) / 63))
+            rgba.append(UInt8((UInt32(value & 0x1F) * 255 + 15) / 31))
+            rgba.append(255)
+        }
+        return rgba
     }
     var canReloadSelectedFirmware: Bool {
         guard simulatorProjectRoot != nil,
               let project = selectedSourceProject,
-              project.compatibility != .binaryOnly,
               project.compatibility != .invalid,
               project.compatibility != .missing else { return false }
         return project.runtimeID != nil && project.firmwarePath != nil
@@ -821,6 +1146,11 @@ final class SimulatorModel: ObservableObject {
     }
 
     func blueButton(clicks: Int) {
+        if hasActiveQEMUFirmware, qemuBoardCapabilities.contains(.buttons) {
+            sendQEMUPacket(StickS3VirtualBoardPacketEncoder().button(.front, clicks: clicks))
+            eventText = "FRONT \(gestureName(clicks))"
+            return
+        }
         guard supports(button: .front, clicks: clicks) else {
             eventText = "FRONT \(gestureName(clicks)) UNBOUND"
             return
@@ -849,6 +1179,11 @@ final class SimulatorModel: ObservableObject {
     }
 
     func grayButton(clicks: Int) {
+        if hasActiveQEMUFirmware, qemuBoardCapabilities.contains(.buttons) {
+            sendQEMUPacket(StickS3VirtualBoardPacketEncoder().button(.side, clicks: clicks))
+            eventText = "SIDE \(gestureName(clicks))"
+            return
+        }
         guard supports(button: .side, clicks: clicks) else {
             eventText = "SIDE \(gestureName(clicks)) UNBOUND"
             return

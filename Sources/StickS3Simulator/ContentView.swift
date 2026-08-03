@@ -252,7 +252,7 @@ struct ContentView: View {
 
     private var resourceStatusText: String {
         guard let fits = model.resourceMetrics.appFitsPartition else {
-            return t("只显示已验证数据", "Verified data only")
+            return t("等待可用的固件资源数据", "Waiting for firmware resource data")
         }
         if !fits { return t("固件已超出当前应用槽", "Firmware exceeds current app slot") }
         if (model.resourceMetrics.appUsageRatio ?? 0) >= 0.90 {
@@ -271,7 +271,8 @@ struct ContentView: View {
     private var device: some View {
         VStack(spacing: 10) {
             HStack {
-                Circle().fill(model.hasRunnableFirmware ? .green : .gray).frame(width: 7, height: 7)
+                Circle().fill(model.hasRunnableFirmware || model.hasActiveQEMUFirmware ? .green : .gray)
+                    .frame(width: 7, height: 7)
                 Text(t("设备屏幕", "DEVICE SCREEN"))
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
                 Spacer()
@@ -307,25 +308,63 @@ struct ContentView: View {
 
     private var deviceFace: some View {
         VStack(spacing: 10) {
-            if !model.hasRunnableFirmware {
+            if model.hasActiveQEMUFirmware {
+                if model.qemuDisplayReady {
+                    QEMUFrameView(model: model)
+                        .frame(width: 337.5, height: 600)
+                        .colorMultiply(Color(white: model.screenBrightnessPercent / 100))
+                } else {
+                    VStack(spacing: 14) {
+                    Image(systemName: "display")
+                        .font(.system(size: 42, weight: .light))
+                        .foregroundStyle(model.qemuState == .running ? .green : .secondary)
+                    Text(model.qemuState == .running
+                         ? t("固件已启动", "Firmware Started")
+                         : t("正在准备固件", "Preparing Firmware"))
+                        .font(.title3.bold())
+                    Text(model.qemuFirmwareName ?? t("已导入固件", "Imported Firmware"))
+                        .font(.callout).foregroundStyle(.secondary)
+                    Text(t("等待 StickS3 屏幕像素输出。运行日志可在“固件管理”中查看。",
+                           "Waiting for StickS3 display pixels. Runtime details are available in Firmware Manager."))
+                        .font(.caption).foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(width: 270)
+                    ProgressView().controlSize(.small)
+                    Button(t("停止模拟", "Stop Simulation")) { model.stopQEMU() }
+                        .buttonStyle(.bordered)
+                    }
+                    .frame(width: 337.5, height: 600)
+                }
+            } else if !model.hasRunnableFirmware {
                 VStack(spacing: 12) {
-                    Image(systemName: model.hasImportedFirmware ? "hammer" : "shippingbox")
+                    Image(systemName: model.needsSimulatorAdapter
+                          ? "wrench.and.screwdriver"
+                          : model.hasImportedFirmware ? "hammer" : "shippingbox")
                         .font(.system(size: 42, weight: .light))
                         .foregroundStyle(.secondary)
-                    Text(model.hasImportedFirmware
+                    Text(model.needsSimulatorAdapter
+                         ? t("源码工程已识别", "Source Project Recognized")
+                         : model.hasImportedFirmware
                          ? t("固件需要重新载入", "Firmware Reload Required")
                          : t("尚未导入固件", "No Firmware Imported"))
                         .font(.title3.bold())
-                    Text(model.hasImportedFirmware
+                    Text(model.needsSimulatorAdapter
+                         ? t("开始模拟时会在私有副本中接入屏幕、按键和姿态接口。",
+                             "Start Simulation connects display, button, and pose interfaces in a private copy.")
+                         : model.hasImportedFirmware
                          ? t("所选项目源码与当前虚拟设备版本不同。",
                              "The selected source differs from this virtual device build.")
-                         : t("选择一个固件文件，或一个固件项目文件夹。",
-                             "Select one firmware file or one firmware project folder."))
+                         : t("选择一个 StickS3 固件源码项目文件夹。",
+                             "Select a StickS3 firmware source-project folder."))
                         .font(.caption).foregroundStyle(.secondary)
-                    Button(model.hasImportedFirmware
+                    Button(model.needsSimulatorAdapter
+                           ? t("查看兼容状态", "View Compatibility")
+                           : model.hasImportedFirmware
                            ? t("重新载入固件", "Reload Firmware")
                            : t("导入固件或项目", "Import Firmware or Project")) {
-                        if model.hasImportedFirmware {
+                        if model.needsSimulatorAdapter {
+                            showsProjectManager = true
+                        } else if model.hasImportedFirmware {
                             model.rebuildSimulator()
                             showsRebuildLog = true
                         } else {
@@ -333,7 +372,9 @@ struct ContentView: View {
                         }
                     }
                         .buttonStyle(.borderedProminent)
-                        .disabled(model.hasImportedFirmware && !model.canReloadSelectedFirmware)
+                        .disabled(model.hasImportedFirmware
+                                  && !model.needsSimulatorAdapter
+                                  && !model.canReloadSelectedFirmware)
                 }
                 .frame(width: 337.5, height: 600)
             } else {
@@ -346,7 +387,8 @@ struct ContentView: View {
                 }
                 .colorMultiply(Color(white: model.screenBrightnessPercent / 100))
             }
-            if model.hasRunnableFirmware {
+            if (model.hasRunnableFirmware && !model.hasActiveQEMUFirmware)
+                || (model.hasActiveQEMUFirmware && model.qemuBoardCapabilities.contains(.buttons)) {
                 HStack(spacing: 28) {
                     Button {
                         model.blueButton(clicks: 1)
@@ -395,6 +437,7 @@ struct ContentView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     runControlButtons
+                        .disabled(model.hasActiveQEMUFirmware)
                     Divider()
                     poseControlButtons
                     Divider()
@@ -410,6 +453,8 @@ struct ContentView: View {
                         deviceButtonRows
                     }
                     .frame(width: 204, alignment: .topLeading)
+                    .disabled(model.hasActiveQEMUFirmware
+                              && !model.qemuBoardCapabilities.contains(.buttons))
 
                     Divider()
 
@@ -419,10 +464,11 @@ struct ContentView: View {
                         hardwareControlRows
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .disabled(model.hasActiveQEMUFirmware)
                 }
             }
-            .disabled(!model.hasRunnableFirmware)
-            .opacity(model.hasRunnableFirmware ? 1 : 0.45)
+            .disabled(!(model.hasRunnableFirmware && !model.hasActiveQEMUFirmware) && !model.qemuControlsReady)
+            .opacity((model.hasRunnableFirmware && !model.hasActiveQEMUFirmware) || model.qemuControlsReady ? 1 : 0.45)
 
             keyboardHelp
                 .padding(.horizontal, 12)
@@ -451,7 +497,7 @@ struct ContentView: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
     }
 
     private var orientationHint: String {
@@ -513,7 +559,10 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: lightBackground ? 9 : 6) {
             Text(t("固件选择", "Firmware"))
                 .font(.system(size: 15, weight: .bold))
-            if model.hasImportedFirmware {
+            if model.hasActiveQEMUFirmware {
+                Label(model.qemuFirmwareName ?? t("已导入固件", "Imported Firmware"), systemImage: "display")
+                    .font(.callout.bold()).foregroundStyle(.green)
+            } else if model.hasSelectableFirmware {
                 Picker("当前固件", selection: $model.selectedProject) {
                     ForEach(model.visibleProjects) { project in
                         Text(project.firmwareName).tag(project)
@@ -525,15 +574,32 @@ struct ContentView: View {
                 .onChange(of: model.selectedProject) { _, project in
                     model.eventText = "FIRMWARE \(project.rawValue.uppercased())"
                 }
+            } else if model.hasImportedFirmware {
+                Label(t("已识别项目，等待模拟适配", "Project recognized; adapter required"),
+                      systemImage: "wrench.and.screwdriver")
+                    .font(.callout.bold()).foregroundStyle(.orange)
             } else {
                 Label(t("尚未导入固件", "No firmware imported"), systemImage: "tray")
                     .font(.callout.bold()).foregroundStyle(.secondary)
             }
 
-            if model.hasRunnableFirmware {
+            if model.hasActiveQEMUFirmware {
+                HStack(spacing: 6) {
+                    Circle().fill(.green).frame(width: 7, height: 7)
+                    Text(t("固件模拟正在运行", "Firmware simulation is running"))
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } else if model.hasRunnableFirmware {
                 HStack(spacing: 6) {
                     Circle().fill(.green).frame(width: 7, height: 7)
                     Text(orientationHint)
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            } else if model.needsSimulatorAdapter {
+                HStack(spacing: 6) {
+                    Circle().fill(.orange).frame(width: 7, height: 7)
+                    Text(t("已识别 StickS3 源码工程，可生成模拟接口",
+                           "StickS3 source project recognized; simulator interface is available"))
                         .font(.caption).foregroundStyle(.secondary)
                 }
             } else if model.hasImportedFirmware {
@@ -902,11 +968,11 @@ struct ContentView: View {
     private func chooseTestProject() {
         let panel = NSOpenPanel()
         panel.title = t("导入固件或项目", "Import Firmware or Project")
-        panel.message = t("一次选择一个 ESP32 .bin 固件文件，或一个固件项目文件夹。导入不会修改所选内容。",
-                          "Select one ESP32 .bin firmware file or one firmware project folder. Importing does not modify it.")
+        panel.message = t("选择一个 ESP-IDF、PlatformIO 或 Arduino StickS3 源码项目文件夹。导入不会修改所选内容。",
+                          "Select an ESP-IDF, PlatformIO, or Arduino StickS3 source-project folder. Importing does not modify it.")
         panel.prompt = t("导入", "Import")
         panel.canChooseDirectories = true
-        panel.canChooseFiles = true
+        panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.resolvesAliases = true
         if panel.runModal() == .OK, let url = panel.url {
