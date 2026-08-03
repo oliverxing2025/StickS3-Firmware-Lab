@@ -11,6 +11,7 @@
     <a href="#已支持固件">支持固件</a> ·
     <a href="#完整控制">完整控制</a> ·
     <a href="#安装">安装</a> ·
+    <a href="#测试状态与-windows-支持">支持说明</a> ·
     <a href="#构建">构建</a> ·
     <a href="README.md">English</a>
   </p>
@@ -22,7 +23,7 @@
     <img alt="模式：本地优先" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
   <br>
-  <img src="assets/screenshots/stick-s3-virtual-device-brand.png" alt="Stick S3 虚拟设备与小奥科技品牌图" width="520">
+  <img src="Resources/AppIcon-1024.png" alt="Stick S3 虚拟设备应用图标" width="420">
 </div>
 
 ## v0.1.0 更新
@@ -38,6 +39,10 @@
 - **像素回归验证：**通过稳定 RGB565 完整帧哈希检测颜色、字体、坐标、图层或固件行为漂移。
 
 ## 项目概览
+
+<div align="center">
+  <img src="assets/screenshots/stick-s3-virtual-device-brand.png" alt="Stick S3 虚拟设备与小奥科技品牌图" width="520">
+</div>
 
 Stick S3 虚拟设备是面向 StickS3 固件开发与演示的原生 macOS 环境。
 它把固件自己的渲染与交互代码直接编译为主机适配器，并在虚拟机身中显示
@@ -96,6 +101,17 @@ LVGL 适配器共用仓库中固定的 LVGL 9.2 源码快照和 Montserrat 配�
 | 源码构建 | Xcode 命令行工具与 Swift 6 |
 | 页面 | 固定应用窗口，不允许上下或左右滚动 |
 | 可选 Codex Bridge | 本机回环服务 `127.0.0.1:8765` |
+
+## 测试状态与 Windows 支持
+
+> [!IMPORTANT]
+> 当前版本尚未在多台不同型号的 Mac、多个 macOS 系统版本及不同硬件环境下
+> 进行多轮完整测试。如在使用过程中遇到任何问题，欢迎随时通过
+> [GitHub Issues](https://github.com/oliverxing2025/StickS3-Virtual-Device/issues)
+> 反馈，我会根据实际情况持续修复和更新。
+
+> [!NOTE]
+> 由于个人时间和精力有限，目前尚未开发 Windows 版本，敬请谅解。
 
 ## 安装
 

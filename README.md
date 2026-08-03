@@ -11,6 +11,7 @@
     <a href="#supported-firmware">Firmware</a> ·
     <a href="#complete-controls">Controls</a> ·
     <a href="#installation">Install</a> ·
+    <a href="#testing-status-and-windows-support">Support</a> ·
     <a href="#build">Build</a> ·
     <a href="README.zh-CN.md">简体中文</a>
   </p>
@@ -22,7 +23,7 @@
     <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
   <br>
-  <img src="assets/screenshots/stick-s3-virtual-device-brand.png" alt="Stick S3 Virtual Device and XiaoAo Technology brand artwork" width="520">
+  <img src="Resources/AppIcon-1024.png" alt="Stick S3 Virtual Device application icon" width="420">
 </div>
 
 ## What's new in v0.1.0
@@ -43,6 +44,10 @@ the complete notes on the
   changes in color, typography, geometry, layering, or firmware behavior.
 
 ## Overview
+
+<div align="center">
+  <img src="assets/screenshots/stick-s3-virtual-device-brand.png" alt="Stick S3 Virtual Device and XiaoAo Technology brand artwork" width="520">
+</div>
 
 Stick S3 Virtual Device is a native macOS development and demonstration
 environment for StickS3 firmware. It compiles firmware-owned rendering and
@@ -104,6 +109,21 @@ repositories.
 | Source build | Xcode command-line tools and Swift 6 |
 | Display | Fixed application window; no horizontal or vertical page scrolling |
 | Optional Codex bridge | Local loopback service at `127.0.0.1:8765` |
+
+## Testing status and Windows support
+
+> [!IMPORTANT]
+> This early release has not yet undergone repeated validation across multiple
+> Mac models, macOS versions, and hardware configurations. If you encounter any
+> problem, please report it through
+> [GitHub Issues](https://github.com/oliverxing2025/StickS3-Virtual-Device/issues).
+> Feedback is welcome, and the application will continue to be corrected and
+> updated as issues are identified.
+
+> [!NOTE]
+> A Windows version is not currently available. As an independent developer
+> with limited time and development capacity, I have focused on the macOS
+> version. Thank you for your understanding.
 
 ## Installation
 
