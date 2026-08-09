@@ -643,15 +643,20 @@ struct ContentView: View {
             HStack(spacing: 8) {
                 Button { chooseTestProject() } label: {
                     Label(t("导入固件或项目", "Import Firmware or Project"),
-                          systemImage: "square.and.arrow.down")
+                          systemImage: "plus.circle.fill")
+                        .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderless)
-                Spacer()
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.blue)
+                .help(t("选择 StickS3 固件源码项目",
+                        "Choose a StickS3 firmware source project"))
                 Button { showsProjectManager = true } label: {
                     Label(t("管理 \(model.firmwareCatalog.count)",
                             "Manage \(model.firmwareCatalog.count)"), systemImage: "shippingbox")
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.bordered)
+                .controlSize(.large)
             }
 
             if !model.projectLibraryMessage.isEmpty {
