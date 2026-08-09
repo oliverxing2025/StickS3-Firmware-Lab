@@ -46,8 +46,17 @@ struct CodexBridgeClient {
 
     private func request(path: String, method: String,
                          json: [String: Any]? = nil) async throws -> [String: Any] {
-        guard let url = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
+        guard let originalURL = URL(string: path, relativeTo: baseURL)?.absoluteURL else {
             throw URLError(.badURL)
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpShouldSetCookies = false
+        configuration.urlCache = nil
+        let session = URLSession(configuration: configuration)
+        guard let url = await HostServiceDiscovery().resolve(
+            originalURL, expectedIdentity: "vibestick-bridge", session: session
+        ) else {
+            throw URLError(.cannotConnectToHost)
         }
         var request = URLRequest(url: url)
         request.httpMethod = method
@@ -55,7 +64,7 @@ struct CodexBridgeClient {
         request.setValue("vibestick", forHTTPHeaderField: "X-Vibe-Stick-Firmware-Name")
         let appVersion = Bundle.main.object(
             forInfoDictionaryKey: "CFBundleShortVersionString"
-        ) as? String ?? "0.2.0"
+        ) as? String ?? "0.1.0"
         request.setValue("\(appVersion)-simulator",
                          forHTTPHeaderField: "X-Vibe-Stick-Firmware-Version")
         request.setValue("HTTP", forHTTPHeaderField: "X-Vibe-Stick-Firmware-Transport")
@@ -66,7 +75,7 @@ struct CodexBridgeClient {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: json)
         }
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse,
               (200..<300).contains(http.statusCode) else {
             throw URLError(.badServerResponse)

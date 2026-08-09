@@ -1,14 +1,163 @@
 import BreakoutCore
 import CodexCore
-import FruitCore
 import Foundation
 import HourglassCore
 import HourglassLiquidCore
-import SimulatorSupport
+@testable import SimulatorSupport
 @testable import StickS3Simulator
 import XCTest
 
 final class BreakoutCoreTests: XCTestCase {
+    func testHostNetworkProxyRejectsNonLoopbackURLs() async {
+        let request = StickS3HostNetworkRequest(
+            requestID: 7,
+            method: 0,
+            timeoutMilliseconds: 1_000,
+            url: "https://example.com/private",
+            headers: "",
+            body: Data()
+        )
+
+        let result = await HostNetworkProxy().perform(request)
+
+        XCTAssertEqual(result.requestID, 7)
+        XCTAssertEqual(result.errorCode, Int(URLError.unsupportedURL.rawValue))
+        XCTAssertEqual(result.statusCode, 0)
+        XCTAssertTrue(result.body.isEmpty)
+    }
+
+    func testHostServiceDiscoveryPrefersValidatedDynamicEndpointOverOccupiedLegacyPort() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record: [String: Any] = [
+            "schema_version": 1,
+            "service_identity": "customer-data-service",
+            "protocol_version": "1",
+            "instance_id": "test-instance",
+            "pid": 123,
+            "base_url": "http://127.0.0.1:43123",
+            "health_url": "http://127.0.0.1:43123/health",
+            "legacy_ports": [8765],
+        ]
+        try JSONSerialization.data(withJSONObject: record).write(
+            to: directory.appendingPathComponent("customer.json"))
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HostDiscoveryURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        HostDiscoveryURLProtocol.requestHandler = { request in
+            XCTAssertEqual(request.url?.port, 43123)
+            let body = try JSONSerialization.data(withJSONObject: [
+                "service_identity": "customer-data-service"
+            ])
+            return (HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!, body)
+        }
+        defer { HostDiscoveryURLProtocol.requestHandler = nil }
+
+        let original = try XCTUnwrap(URL(string: "http://127.0.0.1:8765/state?full=1"))
+        let resolved = await HostServiceDiscovery(directory: directory).resolve(
+            original, session: session)
+
+        XCTAssertEqual(try XCTUnwrap(resolved).absoluteString,
+                       "http://127.0.0.1:43123/state?full=1")
+    }
+
+    func testHostServiceDiscoveryRejectsMismatchedServiceIdentity() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let record: [String: Any] = [
+            "schema_version": 1,
+            "service_identity": "expected-service",
+            "protocol_version": "1",
+            "instance_id": "test-instance",
+            "pid": 123,
+            "base_url": "http://127.0.0.1:43123",
+            "health_url": "http://127.0.0.1:43123/health",
+            "legacy_ports": [8765],
+        ]
+        try JSONSerialization.data(withJSONObject: record).write(
+            to: directory.appendingPathComponent("customer.json"))
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [HostDiscoveryURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        HostDiscoveryURLProtocol.requestHandler = { request in
+            let identity = request.url?.port == 43123 ? "wrong-service" : "occupied-service"
+            let body = try JSONSerialization.data(withJSONObject: ["service_identity": identity])
+            return (HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil
+            )!, body)
+        }
+        defer { HostDiscoveryURLProtocol.requestHandler = nil }
+
+        let original = try XCTUnwrap(URL(string: "http://127.0.0.1:8765/state"))
+        let resolved = await HostServiceDiscovery(directory: directory).resolve(
+            original, expectedIdentity: "expected-service", session: session)
+
+        XCTAssertNil(resolved)
+    }
+
+    func testQEMURegistryOnlyRecognizesTheExactRecordedExecutable() {
+        let executable = "/Applications/StickS3 固件实验台.app/Contents/Resources/Emulation/qemu-system-xtensa"
+        XCTAssertTrue(ChildProcessRegistry.isOwnedQEMUCommand(
+            executable + " -M esp32s3 -serial stdio", executablePath: executable))
+        XCTAssertTrue(ChildProcessRegistry.isOwnedQEMUCommand(executable, executablePath: executable))
+        XCTAssertFalse(ChildProcessRegistry.isOwnedQEMUCommand(
+            "/tmp/qemu-system-xtensa -M esp32s3", executablePath: executable))
+        XCTAssertFalse(ChildProcessRegistry.isOwnedQEMUCommand(
+            executable + "-helper", executablePath: executable))
+        XCTAssertFalse(ChildProcessRegistry.isOwnedQEMUCommand(
+            "/bin/sleep 30", executablePath: "/bin/sleep"))
+    }
+
+    func testQEMUFrameGateDropsRepeatedSequencesAndIdenticalPixels() {
+        var gate = QEMUFrameGate()
+        let first = StickS3VirtualBoardFrame(
+            width: 1, height: 1, sequence: 1, rgb565: Data([0, 1]))
+        XCTAssertTrue(gate.accept(first))
+        XCTAssertFalse(gate.accept(first))
+        XCTAssertFalse(gate.accept(.init(
+            width: 1, height: 1, sequence: 2, rgb565: Data([0, 1]))))
+        XCTAssertTrue(gate.accept(.init(
+            width: 1, height: 1, sequence: 3, rgb565: Data([1, 0]))))
+        gate.reset()
+        XCTAssertTrue(gate.accept(first))
+    }
+
+    func testFirmwareBuildCacheSignatureTracksSourceAndAdapterChanges() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sticks3-build-cache-signature-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let adapter = root.appendingPathComponent("adapter", isDirectory: true)
+        try FileManager.default.createDirectory(at: source.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: adapter, withIntermediateDirectories: true)
+        try Data("v1".utf8).write(to: source.appendingPathComponent("src/main.c"))
+        try Data("bridge-v1".utf8).write(to: adapter.appendingPathComponent("bridge.cpp"))
+        let project = SimulatorProjectReference(
+            displayName: "Cache Test", sourcePath: source.path, firmwarePath: source.path,
+            runtimeID: nil, compatibility: .sourceNeedsAdapter, detail: "", projectFormat: .espIDF
+        )
+
+        let first = try StickS3FirmwareBuildCacheSignature.calculate(for: project, adapterDirectory: adapter)
+        let same = try StickS3FirmwareBuildCacheSignature.calculate(for: project, adapterDirectory: adapter)
+        XCTAssertEqual(first, same)
+
+        try Data("v2".utf8).write(to: source.appendingPathComponent("src/main.c"))
+        let sourceChanged = try StickS3FirmwareBuildCacheSignature.calculate(for: project, adapterDirectory: adapter)
+        XCTAssertNotEqual(first, sourceChanged)
+
+        try Data("bridge-v2".utf8).write(to: adapter.appendingPathComponent("bridge.cpp"))
+        let adapterChanged = try StickS3FirmwareBuildCacheSignature.calculate(for: project, adapterDirectory: adapter)
+        XCTAssertNotEqual(sourceChanged, adapterChanged)
+    }
+
     private func writeValidFullFlash(to url: URL, size: Int = 2 * 1024 * 1024) throws {
         var image = Data(repeating: 0xFF, count: size)
         image[0] = 0xE9
@@ -116,7 +265,10 @@ final class BreakoutCoreTests: XCTestCase {
         XCTAssertTrue(command.arguments.contains("-M"))
         XCTAssertTrue(command.arguments.contains("esp32s3"))
         XCTAssertTrue(command.arguments.contains("file=\(flash.path),if=mtd,format=raw"))
-        XCTAssertTrue(command.arguments.contains("-nographic"))
+        XCTAssertEqual(
+            Array(command.arguments.suffix(6)),
+            ["-display", "none", "-monitor", "none", "-serial", "stdio"]
+        )
         XCTAssertTrue(command.arguments.contains(where: { $0.contains("qemu-esp32s3-efuse.bin") }))
         XCTAssertFalse(command.arguments.contains("-nic"))
         XCTAssertFalse(command.arguments.contains("/bin/sh"))
@@ -151,6 +303,184 @@ final class BreakoutCoreTests: XCTestCase {
         let motion = encoder.motion(x: -1, y: 0.25, z: 1)
         XCTAssertEqual(motion.prefix(6), Data([0x53, 0x33, 0x56, 0x44, 0x01, 0x12]))
         XCTAssertEqual(motion.count, 10 + 12)
+        let state = encoder.deviceState(
+            batteryPercent: 72, charging: true, soundEnabled: false, framesPerSecond: 60)
+        XCTAssertEqual(state.prefix(6), Data([0x53, 0x33, 0x56, 0x44, 0x01, 0x13]))
+        XCTAssertEqual(state.suffix(4), Data([72, 1, 0, 60]))
+    }
+
+    func testVirtualBoardParsesHostNetworkRequestAndEncodesResponse() throws {
+        let url = Data("https://example.test/state".utf8)
+        let headers = Data("Accept:application/json\n".utf8)
+        let body = Data("{\"ready\":true}".utf8)
+        var payload = Data()
+        func append32(_ value: UInt32) {
+            var little = value.littleEndian
+            withUnsafeBytes(of: &little) { payload.append(contentsOf: $0) }
+        }
+        func append16(_ value: UInt16) {
+            var little = value.littleEndian
+            withUnsafeBytes(of: &little) { payload.append(contentsOf: $0) }
+        }
+        append32(41)
+        payload.append(1)
+        append32(2500)
+        append16(UInt16(url.count))
+        append16(UInt16(headers.count))
+        append32(UInt32(body.count))
+        payload.append(url); payload.append(headers); payload.append(body)
+        var packet = Data([0x53, 0x33, 0x56, 0x44, 1, 0x20])
+        var length = UInt32(payload.count).littleEndian
+        withUnsafeBytes(of: &length) { packet.append(contentsOf: $0) }
+        packet.append(payload)
+
+        var parser = StickS3VirtualBoardStreamParser()
+        XCTAssertEqual(parser.append(packet), [.hostNetworkRequest(.init(
+            requestID: 41, method: 1, timeoutMilliseconds: 2500,
+            url: "https://example.test/state", headers: "Accept:application/json\n",
+            body: body))])
+
+        let response = StickS3VirtualBoardPacketEncoder().hostNetworkResponse(
+            requestID: 41, statusCode: 200, errorCode: 0, body: body)
+        XCTAssertEqual(response.prefix(6), Data([0x53, 0x33, 0x56, 0x44, 1, 0x21]))
+        XCTAssertEqual(response.suffix(body.count), body)
+    }
+
+    func testVirtualBoardParsesSemanticAudioEvent() {
+        let packet = Data([0x53, 0x33, 0x56, 0x44, 0x01, 0x03,
+                           0x01, 0x00, 0x00, 0x00, 0x00])
+        var parser = StickS3VirtualBoardStreamParser()
+        XCTAssertEqual(parser.append(packet), [.audio(0)])
+    }
+
+    func testVirtualBoardParsesRLEFramebufferPacket() {
+        var parser = StickS3VirtualBoardStreamParser()
+        var payload = Data([2, 0, 2, 0, 7, 0, 0, 0])
+        // 3 red RGB565 pixels followed by 1 green pixel.
+        payload.append(contentsOf: [3, 0, 0x00, 0xF8, 1, 0, 0xE0, 0x07])
+        var packet = Data([0x53, 0x33, 0x56, 0x44, 1, 0x04])
+        var length = UInt32(payload.count).littleEndian
+        withUnsafeBytes(of: &length) { packet.append(contentsOf: $0) }
+        packet.append(payload)
+
+        XCTAssertEqual(parser.append(packet), [.frame(.init(
+            width: 2, height: 2, sequence: 7,
+            rgb565: Data([0x00, 0xF8, 0x00, 0xF8, 0x00, 0xF8, 0xE0, 0x07])))])
+    }
+
+    func testVirtualBoardAppliesSparseFramebufferDelta() {
+        var parser = StickS3VirtualBoardStreamParser()
+        var fullPayload = Data([3, 0, 2, 0, 1, 0, 0, 0])
+        fullPayload.append(contentsOf: [
+            0, 0, 1, 0, 2, 0,
+            3, 0, 4, 0, 5, 0,
+        ])
+        var fullPacket = Data([0x53, 0x33, 0x56, 0x44, 1, 0x02])
+        var fullLength = UInt32(fullPayload.count).littleEndian
+        withUnsafeBytes(of: &fullLength) { fullPacket.append(contentsOf: $0) }
+        fullPacket.append(fullPayload)
+        XCTAssertEqual(parser.append(fullPacket).count, 1)
+
+        // Replace pixels 1...2 while preserving the other four pixels.
+        var deltaPayload = Data([3, 0, 2, 0, 2, 0, 0, 0])
+        deltaPayload.append(contentsOf: [1, 0, 2, 0, 9, 0, 8, 0])
+        var deltaPacket = Data([0x53, 0x33, 0x56, 0x44, 1, 0x05])
+        var deltaLength = UInt32(deltaPayload.count).littleEndian
+        withUnsafeBytes(of: &deltaLength) { deltaPacket.append(contentsOf: $0) }
+        deltaPacket.append(deltaPayload)
+
+        XCTAssertEqual(parser.append(deltaPacket), [.frame(.init(
+            width: 3, height: 2, sequence: 2,
+            rgb565: Data([0, 0, 9, 0, 8, 0, 3, 0, 4, 0, 5, 0])))])
+    }
+
+    func testHardwareProfileMapsStableLogicalAxesWithoutFirmwareNames() {
+        let mapping = StickS3VirtualBoardMotionMap()
+        let report = StickS3VirtualBoardReport(
+            capabilities: [.display, .buttons, .bmi270],
+            logicalX: .init(.y, inverted: true), logicalY: .init(.z), logicalZ: .init(.z),
+            frontButton: .init(gpio: 11), sideButton: .init(gpio: 12),
+            displayRotation: .degrees0, compatibility: .verified)
+
+        let horizontal = mapping.sensorVector(
+            report: report, logicalX: 0.75, logicalY: 0, logicalZ: 1)
+        XCTAssertEqual(horizontal, StickS3VirtualBoardMotionVector(x: 0, y: -0.75, z: 1))
+
+        let vertical = mapping.sensorVector(
+            report: report, logicalX: 0, logicalY: 0.75, logicalZ: 1)
+        XCTAssertEqual(vertical, StickS3VirtualBoardMotionVector(x: 0, y: 0, z: 1.75))
+
+        let generic = mapping.sensorVector(
+            report: nil, logicalX: 0.2, logicalY: -0.3, logicalZ: 0.9)
+        XCTAssertEqual(generic, StickS3VirtualBoardMotionVector(x: 0.2, y: -0.3, z: 0.9))
+    }
+
+    func testVirtualBoardParsesHardwareReportFromFirmwareBridge() {
+        let payload = Data([0x07, 0xFE, 0x03, 0x03, 11, 12, 1, 1, 0, 0])
+        var packet = Data([0x53, 0x33, 0x56, 0x44, 0x01, 0x01])
+        var length = UInt32(payload.count).littleEndian
+        withUnsafeBytes(of: &length) { packet.append(contentsOf: $0) }
+        packet.append(payload)
+        var parser = StickS3VirtualBoardStreamParser()
+        let events = parser.append(packet)
+        guard case .ready(let report) = events.first else { return XCTFail("missing hardware report") }
+        XCTAssertEqual(report.compatibility, .verified)
+        XCTAssertEqual(report.logicalX, .init(.y, inverted: true))
+        XCTAssertEqual(report.frontButton, .init(gpio: 11))
+    }
+
+    func testHardwareDetectorUsesSourceSemanticsInsteadOfProjectName() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hardware-detect-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let generated = root.appendingPathComponent("managed_components/vendor", isDirectory: true)
+        try FileManager.default.createDirectory(at: generated, withIntermediateDirectories: true)
+        try Data(repeating: 0x20, count: 4_100_000).write(to: generated.appendingPathComponent("noise.c"))
+        try Data("""
+        #define PIN_BUTTON_FRONT 11
+        #define PIN_BUTTON_SIDE 12
+        #include <esp_lcd_panel_st7789.h>
+        #include <bmi270.h>
+        int battery_level(void); int battery_charging(void);
+        void fruit_audio_play(void); void i2s_channel_enable(void);
+        void controls(int motion_y, int motion_z) {
+          int x = motion_y > 0 ? EVENT_MOTION_LEFT : EVENT_MOTION_RIGHT;
+          int y = motion_z > 0 ? EVENT_MOTION_UP : EVENT_MOTION_DOWN;
+          button_gpio_config_t b = {.active_level=0};
+        }
+        """.utf8).write(to: root.appendingPathComponent("main.c"))
+        let project = SimulatorProjectReference(
+            displayName: "Customer Project 42", sourcePath: root.path, firmwarePath: root.path,
+            runtimeID: nil, compatibility: .sourceNeedsAdapter, detail: "", projectFormat: .espIDF)
+        let profile = StickS3VirtualHardwareDetector().detect(project: project)
+        XCTAssertEqual(profile.compatibility, .autoDetected)
+        XCTAssertEqual(profile.logicalX, .init(.y, inverted: true))
+        XCTAssertEqual(profile.logicalY, .init(.z))
+        XCTAssertEqual(profile.frontButton, .init(gpio: 11, activeLow: true))
+        XCTAssertEqual(profile.sideButton, .init(gpio: 12, activeLow: true))
+        XCTAssertTrue(profile.capabilities.contains(.power))
+        XCTAssertTrue(profile.capabilities.contains(.audio))
+    }
+
+    func testCalibratedProfileIsBoundToExactSourceFingerprint() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hardware-profile-store-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let source = root.appendingPathComponent("main.c")
+        try Data("bmi270 accel; button gpio_num_11; esp_lcd st7789;".utf8).write(to: source)
+        let fingerprint = try StickS3ProjectSourceFingerprint.calculate(at: root)
+        let store = StickS3HardwareProfileStore(storageURL: root.appendingPathComponent("profiles.json"))
+        let calibrated = StickS3VirtualHardwareProfile(
+            sourceFingerprint: fingerprint, compatibility: .verified,
+            capabilities: [.display, .buttons, .bmi270], logicalX: .init(.y, inverted: true))
+        try store.save(calibrated)
+        XCTAssertEqual(store.load(fingerprint: fingerprint), calibrated)
+        try Data("bmi270 accel changed; button gpio_num_11; esp_lcd st7789;".utf8).write(to: source)
+        let changed = try StickS3ProjectSourceFingerprint.calculate(at: root)
+        XCTAssertNotEqual(changed, fingerprint)
+        XCTAssertNil(store.load(fingerprint: changed))
     }
 
     func testFirmwareBuildWorkspaceKeepsGeneratedDirectoriesOutOfImportedProject() throws {
@@ -274,8 +604,36 @@ final class BreakoutCoreTests: XCTestCase {
         XCTAssertEqual(include.lastPathComponent, "espidf_project_include.cmake")
         XCTAssertTrue(FileManager.default.fileExists(atPath:
             privateCopy.appendingPathComponent("components/sticks3_virtual_board/CMakeLists.txt").path))
+        let bridgeCMake = try String(contentsOf:
+            privateCopy.appendingPathComponent("components/sticks3_virtual_board/CMakeLists.txt"),
+            encoding: .utf8)
+        XCTAssertTrue(bridgeCMake.contains("esp_lcd"))
+        XCTAssertTrue(bridgeCMake.contains("esp_http_client"))
         XCTAssertFalse(FileManager.default.fileExists(atPath:
             imported.appendingPathComponent("components/sticks3_virtual_board").path))
+    }
+
+    func testESPIDFVirtualConfigDisablesPSRAMOnlyInPrivateCache() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("espidf-virtual-config-\(UUID().uuidString)", isDirectory: true)
+        let source = root.appendingPathComponent("source", isDirectory: true)
+        let cache = root.appendingPathComponent("cache", isDirectory: true)
+        try FileManager.default.createDirectory(at: source, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let defaults = "CONFIG_SPIRAM=y\nCONFIG_SPIRAM_MODE_OCT=y\n"
+        let active = "CONFIG_IDF_TARGET=\"esp32s3\"\nCONFIG_SPIRAM=y\nCONFIG_SPIRAM_USE_MALLOC=y\n"
+        try defaults.write(to: source.appendingPathComponent("sdkconfig.defaults"), atomically: true, encoding: .utf8)
+        try active.write(to: cache.appendingPathComponent("sdkconfig"), atomically: true, encoding: .utf8)
+
+        let result = try StickS3VirtualSDKConfig.prepare(sourceDirectory: source, cacheDirectory: cache)
+        let normalized = try String(contentsOf: result.sdkconfig, encoding: .utf8)
+        XCTAssertTrue(normalized.contains("# CONFIG_SPIRAM is not set"))
+        XCTAssertFalse(normalized.contains("CONFIG_SPIRAM=y"))
+        XCTAssertTrue(normalized.contains("CONFIG_SPIRAM_USE_MALLOC=y"))
+        XCTAssertEqual(try String(contentsOf: source.appendingPathComponent("sdkconfig.defaults"), encoding: .utf8), defaults)
+        XCTAssertEqual(result.defaults.last?.lastPathComponent, "sdkconfig.virtual.defaults")
     }
 
     func testQEMUImageResolverAssemblesPlatformIOArtifactsWithoutChangingProject() throws {
@@ -374,11 +732,34 @@ final class BreakoutCoreTests: XCTestCase {
         XCTAssertEqual(model.tilt, 0)
         XCTAssertEqual(model.tiltY, 0)
         XCTAssertEqual(model.tiltZ, 1)
+        XCTAssertTrue(model.canPerformDeviceShake)
         for project in VirtualProject.allCases {
             model.selectedProject = project
             model.restartSelectedFirmware()
             XCTAssertEqual(model.eventText, "FIRMWARE RESTARTED")
         }
+        model.stop()
+    }
+
+    @MainActor
+    func testDeviceShakeGesturesReturnBMI270ToOriginalPose() async {
+        let model = SimulatorModel()
+        model.setDevicePose(.upright)
+        model.performDeviceShake(.horizontal)
+        XCTAssertEqual(model.activeShakeGesture, .horizontal)
+        try? await Task.sleep(for: .milliseconds(1_100))
+        XCTAssertNil(model.activeShakeGesture)
+        XCTAssertEqual(model.tilt, 0, accuracy: 0.001)
+        XCTAssertEqual(model.tiltY, 0, accuracy: 0.001)
+        XCTAssertEqual(model.tiltZ, 1, accuracy: 0.001)
+
+        model.performDeviceShake(.vertical)
+        XCTAssertEqual(model.activeShakeGesture, .vertical)
+        try? await Task.sleep(for: .milliseconds(1_100))
+        XCTAssertNil(model.activeShakeGesture)
+        XCTAssertEqual(model.tilt, 0, accuracy: 0.001)
+        XCTAssertEqual(model.tiltY, 0, accuracy: 0.001)
+        XCTAssertEqual(model.tiltZ, 1, accuracy: 0.001)
         model.stop()
     }
 
@@ -389,12 +770,6 @@ final class BreakoutCoreTests: XCTestCase {
             breakout_update(breakout, 1.0 / 60.0, 0, UInt32(iteration * 16))
             XCTAssertNotNil(breakout_framebuffer(breakout))
             breakout_destroy(breakout)
-
-            let fruit = fruit_create()
-            XCTAssertNotNil(fruit)
-            fruit_update(fruit, UInt32(iteration * 20))
-            XCTAssertNotNil(fruit_framebuffer(fruit))
-            fruit_destroy(fruit)
 
             let hourglass = hourglass_create()
             XCTAssertNotNil(hourglass)
@@ -446,6 +821,19 @@ final class BreakoutCoreTests: XCTestCase {
         let downloadedItem = catalog.first(where: { $0.displayName == "Downloaded Demo" })
         XCTAssertEqual(downloadedItem?.source, .linked)
         XCTAssertEqual(downloadedItem?.compatibility, .sourceNeedsAdapter)
+        XCTAssertEqual(downloadedItem?.requiresEmbeddedReload, false)
+
+        let updatedHourglass = SimulatorProjectReference(
+            displayName: "VibeStick-Hourglass",
+            sourcePath: "/workspace/VibeStick-Hourglass",
+            firmwarePath: "/workspace/VibeStick-Hourglass/firmware/sticks3",
+            runtimeID: .hourglass,
+            compatibility: .sourceNeedsAdapter,
+            detail: "reload required"
+        )
+        let updatedHourglassItem = composer.compose(projects: [updatedHourglass]).first
+        XCTAssertEqual(updatedHourglassItem?.canSimulate, false)
+        XCTAssertEqual(updatedHourglassItem?.requiresEmbeddedReload, true)
     }
 
     func testSimulatorRebuildOutputParserTracksRealBuildStages() {
@@ -456,6 +844,9 @@ final class BreakoutCoreTests: XCTestCase {
         XCTAssertEqual(parser.phase(for: "Linking StickS3Simulator", current: .compiling), .linking)
         XCTAssertEqual(parser.phase(for: "REBUILD-STEP:SIGNING", current: .linking), .signing)
         XCTAssertEqual(parser.phase(for: "error: build stopped", current: .compiling), .failed)
+        XCTAssertEqual(parser.fraction(for: "[49/1671] Building C object"), 49.0 / 1671.0)
+        XCTAssertEqual(parser.fraction(for: "[1/10]\n[8/10] Linking"), 0.8)
+        XCTAssertNil(parser.fraction(for: "Waiting for firmware scheduler"))
     }
 
     func testSimulatorProjectInspectorFindsKnownReadOnlyProject() throws {
@@ -510,6 +901,7 @@ final class BreakoutCoreTests: XCTestCase {
         let updated = SimulatorProjectInspector(packagedFingerprints: [.codex: fingerprint]).inspect(project)
         XCTAssertEqual(updated.compatibility, .sourceNeedsAdapter)
         XCTAssertNotEqual(updated.sourceFingerprint, fingerprint)
+        XCTAssertTrue(updated.detail.contains("重新载入固件"))
     }
 
     func testSimulatorProjectInspectorDoesNotPretendBinCanRun() throws {
@@ -773,69 +1165,6 @@ final class BreakoutCoreTests: XCTestCase {
         XCTAssertTrue(hourglass_liquid_snapshot(liquid).running)
     }
 
-    func testFruitFirmwareCoreAndPixelBaseline() {
-        let context = fruit_create()
-        XCTAssertNotNil(context)
-        defer { fruit_destroy(context) }
-        guard let pixels = fruit_framebuffer(context) else {
-            return XCTFail("水果机真机渲染代码未返回帧缓冲")
-        }
-        var checksum: UInt64 = 14_695_981_039_346_656_037
-        for index in 0..<(135 * 240) {
-            checksum ^= UInt64(pixels[index])
-            checksum &*= 1_099_511_628_211
-        }
-        // 水果机真实 main.c READY 帧；颜色、图块或坐标漂移都会失败。
-        XCTAssertEqual(checksum, 13_888_363_629_808_309_653)
-
-        let initial = fruit_snapshot(context)
-        XCTAssertEqual(initial.credit, 0)
-        fruit_button(context, 1, 1)
-        XCTAssertEqual(fruit_snapshot(context).credit, 5)
-        fruit_motion(context, -1, 0)
-        XCTAssertNotEqual(fruit_snapshot(context).selected_control,
-                          initial.selected_control)
-    }
-
-    func testFruitSelectedGoStartsAfterARealBet() {
-        let context = fruit_create()
-        XCTAssertNotNil(context)
-        defer { fruit_destroy(context) }
-
-        // GO 无下注时按真机规则保持 IDLE，屏幕提示 ADD BET。
-        XCTAssertEqual(fruit_snapshot(context).selected_control, 13)
-        fruit_button(context, 0, 1)
-        XCTAssertEqual(fruit_snapshot(context).state, 0)
-
-        // 用侧键双击向前选到一个水果，蓝键下注后再回到 GO。
-        var guardCount = 0
-        while fruit_snapshot(context).selected_control >= 8 && guardCount < 14 {
-            fruit_button(context, 1, 2)
-            guardCount += 1
-        }
-        XCTAssertLessThan(fruit_snapshot(context).selected_control, 8)
-        fruit_button(context, 0, 1)
-        guardCount = 0
-        while fruit_snapshot(context).selected_control != 13 && guardCount < 14 {
-            fruit_button(context, 1, 2)
-            guardCount += 1
-        }
-        XCTAssertEqual(fruit_snapshot(context).selected_control, 13)
-        fruit_button(context, 0, 1)
-        XCTAssertNotEqual(fruit_snapshot(context).state, 0)
-    }
-
-    func testFruitPowerControlsUpdateFirmwareState() {
-        let context = fruit_create()
-        XCTAssertNotNil(context)
-        defer { fruit_destroy(context) }
-        fruit_set_power(context, 37, false, false)
-        let snapshot = fruit_snapshot(context)
-        XCTAssertEqual(snapshot.battery, 37)
-        XCTAssertFalse(snapshot.battery_charging)
-        XCTAssertFalse(snapshot.usb_powered)
-    }
-
     func testRealFirmwareRendererProducesStableRGB565Frame() {
         let context = breakout_create(135, 240)
         XCTAssertNotNil(context)
@@ -880,4 +1209,29 @@ final class BreakoutCoreTests: XCTestCase {
         XCTAssertTrue(ball.x.isFinite)
         XCTAssertTrue(ball.y.isFinite)
     }
+}
+
+private final class HostDiscoveryURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requestHandler:
+        ((URLRequest) throws -> (HTTPURLResponse, Data))?
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        guard let handler = Self.requestHandler else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unknown))
+            return
+        }
+        do {
+            let (response, data) = try handler(request)
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: data)
+            client?.urlProtocolDidFinishLoading(self)
+        } catch {
+            client?.urlProtocol(self, didFailWithError: error)
+        }
+    }
+
+    override func stopLoading() {}
 }

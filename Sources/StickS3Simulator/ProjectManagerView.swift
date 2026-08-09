@@ -8,6 +8,9 @@ struct ProjectManagerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var pendingRemoval: SimulatorFirmwareCatalogItem?
     @State private var shownPath: String?
+    @State private var showsBuildDetails = false
+    @State private var dismissWhenQEMURuns = false
+    @State private var calibrationItem: SimulatorFirmwareCatalogItem?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -62,18 +65,54 @@ struct ProjectManagerView: View {
                             Button(t("停止模拟", "Stop Simulation")) { model.stopQEMU() }
                         }
                     }
-                    ScrollView {
-                        Text(model.qemuLog.isEmpty ? t("等待串口输出…", "Waiting for serial output…") : model.qemuLog)
-                            .font(.system(size: 11, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                    HStack(spacing: 10) {
+                        Group {
+                            if let progress = qemuProgress {
+                                ProgressView(value: progress)
+                            } else {
+                                ProgressView()
+                            }
+                        }
+                        .progressViewStyle(.linear)
+                        Text(qemuProgressCaption)
+                            .font(.caption.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 46, alignment: .trailing)
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.18)) {
+                                showsBuildDetails.toggle()
+                            }
+                        } label: {
+                            Label(showsBuildDetails
+                                  ? t("收起详情", "Hide Details")
+                                  : t("构建详情", "Build Details"),
+                                  systemImage: showsBuildDetails ? "chevron.up" : "chevron.down")
+                        }
+                        .buttonStyle(.bordered)
                     }
-                    .frame(height: 88)
+                    if showsBuildDetails {
+                        ScrollView {
+                            Text(model.qemuLog.isEmpty ? t("等待串口输出…", "Waiting for serial output…") : model.qemuLog)
+                                .font(.system(size: 11, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(height: 120)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    }
                 }
                 .padding(.horizontal, 20).padding(.vertical, 10)
             }
         }
         .frame(minWidth: 900, minHeight: 480)
+        .onChange(of: model.qemuState) { _, state in
+            if dismissWhenQEMURuns && state == .running {
+                dismissWhenQEMURuns = false
+                dismiss()
+            } else if state == .failed || state == .stopped || state == .unavailable {
+                dismissWhenQEMURuns = false
+            }
+        }
         .confirmationDialog(
             t("从固件列表删除？", "Remove from Firmware List?"),
             isPresented: Binding(
@@ -110,10 +149,29 @@ struct ProjectManagerView: View {
         } message: {
             Text(shownPath ?? "")
         }
+        .sheet(item: $calibrationItem) { item in
+            if let id = item.projectReferenceID, let profile = item.hardwareProfile {
+                HardwareCalibrationView(projectName: item.displayName, projectID: id, profile: profile) {
+                    model.saveHardwareCalibration(projectID: $0, profile: $1)
+                }
+            }
+        }
     }
 
     private var buildToolsSection: some View {
-        VStack(alignment: .leading, spacing: 7) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(t("本机构建环境", "Local Build Environments"))
+                    .font(.callout.bold())
+                Spacer()
+                Button(t("PlatformIO 下载", "Download PlatformIO")) {
+                    model.openPlatformIODownload()
+                }
+                Button(t("ESP-IDF 下载", "Download ESP-IDF")) {
+                    model.openESPIDFDownload()
+                }
+                Button(t("重新检测", "Check Again")) { model.refreshBuildToolStatus() }
+            }
             HStack(spacing: 10) {
                 Image(systemName: model.platformIOIsAvailable ? "checkmark.circle.fill" : "arrow.down.circle")
                     .foregroundStyle(model.platformIOIsAvailable ? .green : .orange)
@@ -128,18 +186,21 @@ struct ProjectManagerView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                Spacer()
-                Button(t("PlatformIO 下载", "Download PlatformIO")) { model.openPlatformIODownload() }
-                Button(t("重新检测", "Check Again")) { model.refreshBuildToolStatus() }
             }
-            HStack {
-                Text(model.espIDFIsAvailable
-                     ? t("ESP-IDF 可选扩展：已检测到", "Optional ESP-IDF extension: detected")
-                     : t("ESP-IDF 可选扩展：未安装", "Optional ESP-IDF extension: not installed"))
-                    .font(.caption2).foregroundStyle(.tertiary)
-                Spacer()
-                Button(t("ESP-IDF 下载", "Download ESP-IDF")) { model.openESPIDFDownload() }
-                    .controlSize(.small)
+            HStack(spacing: 10) {
+                Image(systemName: model.espIDFIsAvailable ? "checkmark.circle.fill" : "arrow.down.circle")
+                    .foregroundStyle(model.espIDFIsAvailable ? .green : .orange)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(t("ESP-IDF 构建工具", "ESP-IDF Build Tool"))
+                        .font(.callout.bold())
+                    Text(model.espIDFIsAvailable
+                         ? t("已检测到 ESP-IDF；ESP-IDF 源码项目使用它。",
+                             "ESP-IDF detected; ESP-IDF source projects use it.")
+                         : t("尚未安装。只有 ESP-IDF 源码项目需要先安装它。",
+                             "Not installed. Install it before building ESP-IDF source projects."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
         .padding(.horizontal, 20).padding(.vertical, 10)
@@ -160,8 +221,15 @@ struct ProjectManagerView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(.secondary.opacity(0.12), in: Capsule())
                 }
-                Text(compatibilityTitle(item.compatibility))
+                Text(compatibilityTitle(item))
                     .font(.callout.bold()).foregroundStyle(statusColor(item.compatibility))
+                if let profile = item.hardwareProfile {
+                    Label(profile.compatibility.title,
+                          systemImage: hardwareStatusSymbol(profile.compatibility))
+                        .font(.caption.bold())
+                        .foregroundStyle(hardwareStatusColor(profile.compatibility))
+                    Text(profile.detectionNote).font(.caption).foregroundStyle(.secondary)
+                }
                 Text(localizedDetail(item.detail)).font(.callout).foregroundStyle(.secondary)
                 if let sourcePath = item.sourcePath {
                     Text(sourcePath)
@@ -176,11 +244,23 @@ struct ProjectManagerView: View {
             HStack(spacing: 8) {
                 Button(startButtonTitle(item)) { simulate(item) }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!item.canSimulate && !model.canStartQEMU(item))
+                    .disabled(!item.canSimulate
+                              && !item.requiresEmbeddedReload
+                              && !model.canStartQEMU(item))
 
                 Button(t("显示路径", "Show Path")) { showPath(item) }
                     .buttonStyle(.bordered)
                     .disabled(item.sourcePath == nil)
+
+                if let profile = item.hardwareProfile,
+                   profile.compatibility == .needsCalibration || profile.compatibility == .verified {
+                    Button(profile.compatibility == .verified
+                           ? t("重新校准", "Recalibrate")
+                           : t("校准", "Calibrate")) {
+                        calibrationItem = item
+                    }
+                    .buttonStyle(.bordered)
+                }
 
                 Button(t("从固件列表删除", "Remove from List"), role: .destructive) {
                     pendingRemoval = item
@@ -200,13 +280,24 @@ struct ProjectManagerView: View {
             model.selectedProject = project
             model.eventText = "FIRMWARE \(project.rawValue.uppercased())"
             dismiss()
+        } else if item.requiresEmbeddedReload,
+                  let runtimeID = item.runtimeID,
+                  let project = VirtualProject(runtimeID: runtimeID) {
+            model.stopQEMU()
+            model.selectedProject = project
+            model.rebuildSimulator()
+            dismiss()
         } else if let referenceID = item.projectReferenceID, model.canStartQEMU(item) {
+            dismissWhenQEMURuns = true
             model.startQEMU(referenceID: referenceID)
         }
     }
 
     private func startButtonTitle(_ item: SimulatorFirmwareCatalogItem) -> String {
-        t("开始模拟", "Start Simulation")
+        if item.requiresEmbeddedReload {
+            return t("重新载入固件", "Reload Firmware")
+        }
+        return t("开始模拟", "Start Simulation")
     }
 
     private var qemuStateTitle: String {
@@ -217,6 +308,24 @@ struct ProjectManagerView: View {
         case .starting: return t("正在构建并启动：\(name)", "Building and starting: \(name)")
         case .running: return t("固件正在运行：\(name)", "Firmware running: \(name)")
         case .failed: return t("固件启动失败：\(name)", "Firmware failed to start: \(name)")
+        }
+    }
+
+    private var qemuProgress: Double? {
+        if model.qemuState == .running { return 1 }
+        return SimulatorRebuildOutputParser().fraction(for: model.qemuLog)
+    }
+
+    private var qemuProgressCaption: String {
+        if let progress = qemuProgress {
+            return "\(Int((progress * 100).rounded()))%"
+        }
+        switch model.qemuState {
+        case .starting: return t("准备中", "Starting")
+        case .failed: return t("失败", "Failed")
+        case .stopped: return t("已停止", "Stopped")
+        case .unavailable: return t("不可用", "Unavailable")
+        case .running: return "100%"
         }
     }
 
@@ -235,8 +344,11 @@ struct ProjectManagerView: View {
         }
     }
 
-    private func compatibilityTitle(_ status: SimulatorProjectCompatibility) -> String {
-        switch status {
+    private func compatibilityTitle(_ item: SimulatorFirmwareCatalogItem) -> String {
+        if item.requiresEmbeddedReload {
+            return t("源码已更新，需要重新载入固件", "Source updated; firmware reload required")
+        }
+        switch item.compatibility {
         case .ready: return t("可模拟", "Ready")
         case .sourceNeedsAdapter: return t("源码已识别，可自动生成模拟接口", "Recognized; simulator adapter can be generated automatically")
         case .invalid: return t("不是可识别的 Stick S3 项目", "Unrecognized Stick S3 project")
@@ -270,9 +382,25 @@ struct ProjectManagerView: View {
 
     private func statusColor(_ status: SimulatorProjectCompatibility) -> Color {
         switch status {
-        case .ready: return .green
-        case .sourceNeedsAdapter: return .orange
+        case .ready, .sourceNeedsAdapter: return .green
         case .invalid, .missing: return .red
+        }
+    }
+
+    private func hardwareStatusSymbol(_ status: StickS3HardwareCompatibility) -> String {
+        switch status {
+        case .verified: return "checkmark.seal.fill"
+        case .autoDetected: return "wand.and.stars"
+        case .needsCalibration: return "scope"
+        case .unsupported: return "xmark.octagon.fill"
+        }
+    }
+
+    private func hardwareStatusColor(_ status: StickS3HardwareCompatibility) -> Color {
+        switch status {
+        case .verified, .autoDetected: return .green
+        case .needsCalibration: return .orange
+        case .unsupported: return .red
         }
     }
 }

@@ -200,6 +200,9 @@ public struct StickS3VirtualBoardInjector {
     @discardableResult
     public func inject(
         into project: SimulatorProjectReference,
+        hardwareProfile: StickS3VirtualHardwareProfile = .init(
+            sourceFingerprint: "", compatibility: .autoDetected,
+            capabilities: [.display, .buttons, .bmi270]),
         resourceDirectory: URL? = Bundle.main.resourceURL?.appendingPathComponent("VirtualBoard", isDirectory: true)
     ) throws -> URL? {
         guard project.projectFormat == .platformIO || project.projectFormat == .arduino
@@ -217,12 +220,15 @@ public struct StickS3VirtualBoardInjector {
         }
         let support = root.appendingPathComponent(".sticks3-virtual-board", isDirectory: true)
         try fileManager.createDirectory(at: support, withIntermediateDirectories: true)
+        try generatedConfiguration(for: hardwareProfile).write(
+            to: support.appendingPathComponent("StickS3VirtualHardware.generated.h"),
+            atomically: true, encoding: .utf8)
         if project.projectFormat == .platformIO || project.projectFormat == .arduino {
             let unusedULP = support.appendingPathComponent("unused-riscv-ulp", isDirectory: true)
             try fileManager.createDirectory(at: unusedULP, withIntermediateDirectories: true)
             let manifest = """
             {"name":"toolchain-riscv32-esp","version":"8.4.0+2021r2-patch5",
-             "description":"Placeholder because StickS3 Virtual Device does not simulate ULP programs",
+             "description":"Placeholder because StickS3 Firmware Lab does not simulate ULP programs",
              "system":"darwin_arm64"}
             """
             try manifest.write(to: unusedULP.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
@@ -243,16 +249,18 @@ public struct StickS3VirtualBoardInjector {
         if project.projectFormat == .espIDF {
             let component = root.appendingPathComponent("components/sticks3_virtual_board", isDirectory: true)
             try fileManager.createDirectory(at: component, withIntermediateDirectories: true)
-            for filename in ["StickS3VirtualBoard.h", "StickS3VirtualBoard.cpp"] {
+            for filename in ["StickS3VirtualBoard.h", "StickS3VirtualBoard.cpp", "StickS3VirtualHardware.generated.h"] {
                 let destination = component.appendingPathComponent(filename)
                 if fileManager.fileExists(atPath: destination.path) { try fileManager.removeItem(at: destination) }
-                try fileManager.copyItem(at: resourceDirectory.appendingPathComponent(filename), to: destination)
+                let source = filename.hasSuffix("generated.h") ? support.appendingPathComponent(filename)
+                    : resourceDirectory.appendingPathComponent(filename)
+                try fileManager.copyItem(at: source, to: destination)
             }
             let cmake = """
             idf_component_register(
               SRCS "StickS3VirtualBoard.cpp"
               INCLUDE_DIRS "."
-              PRIV_REQUIRES driver esp_timer freertos
+              PRIV_REQUIRES driver esp_timer esp_lcd freertos esp_http_client
             )
             """
             try cmake.write(to: component.appendingPathComponent("CMakeLists.txt"), atomically: true, encoding: .utf8)
@@ -269,6 +277,28 @@ public struct StickS3VirtualBoardInjector {
             )
             return support.appendingPathComponent("platformio_pre.py")
         }
+    }
+
+    private func generatedConfiguration(for profile: StickS3VirtualHardwareProfile) -> String {
+        let status: Int = switch profile.compatibility {
+        case .verified: 0
+        case .autoDetected: 1
+        case .needsCalibration: 2
+        case .unsupported: 3
+        }
+        return """
+        #pragma once
+        #define S3VD_CAPABILITIES \(profile.capabilities.rawValue)
+        #define S3VD_LOGICAL_X \(profile.logicalX.wireValue)
+        #define S3VD_LOGICAL_Y \(profile.logicalY.wireValue)
+        #define S3VD_LOGICAL_Z \(profile.logicalZ.wireValue)
+        #define S3VD_FRONT_GPIO \(profile.frontButton.gpio)
+        #define S3VD_SIDE_GPIO \(profile.sideButton.gpio)
+        #define S3VD_FRONT_ACTIVE_LOW \(profile.frontButton.activeLow ? 1 : 0)
+        #define S3VD_SIDE_ACTIVE_LOW \(profile.sideButton.activeLow ? 1 : 0)
+        #define S3VD_DISPLAY_ROTATION \(profile.displayRotation.wireValue)
+        #define S3VD_COMPATIBILITY \(status)
+        """ + "\n"
     }
 
     private func enablePlatformIOPrebuildScript(at configuration: URL) throws {
@@ -367,6 +397,52 @@ public enum StickS3FirmwareBuildPlanError: LocalizedError, Equatable {
     }
 }
 
+enum StickS3VirtualSDKConfig {
+    static func prepare(
+        sourceDirectory: URL,
+        cacheDirectory: URL,
+        fileManager: FileManager = .default
+    ) throws -> (sdkconfig: URL, defaults: [URL]) {
+        let sdkconfig = cacheDirectory.appendingPathComponent("sdkconfig")
+        let virtualDefaults = cacheDirectory.appendingPathComponent("sdkconfig.virtual.defaults")
+        try "# StickS3 Firmware Lab private QEMU build\n# CONFIG_SPIRAM is not set\n"
+            .write(to: virtualDefaults, atomically: true, encoding: .utf8)
+
+        if fileManager.fileExists(atPath: sdkconfig.path) {
+            let current = try String(contentsOf: sdkconfig, encoding: .utf8)
+            try disablingExternalPSRAM(in: current)
+                .write(to: sdkconfig, atomically: true, encoding: .utf8)
+        }
+
+        var defaults: [URL] = []
+        let projectDefaults = sourceDirectory.appendingPathComponent("sdkconfig.defaults")
+        if fileManager.fileExists(atPath: projectDefaults.path) { defaults.append(projectDefaults) }
+        defaults.append(virtualDefaults)
+        return (sdkconfig, defaults)
+    }
+
+    static func disablingExternalPSRAM(in configuration: String) -> String {
+        var foundRootSetting = false
+        var lines = configuration
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                let text = String(line)
+                let trimmed = text.trimmingCharacters(in: .whitespaces)
+                if trimmed == "CONFIG_SPIRAM=y"
+                    || (trimmed.hasPrefix("CONFIG_SPIRAM=") && trimmed != "CONFIG_SPIRAM=n") {
+                    foundRootSetting = true
+                    return "# CONFIG_SPIRAM is not set"
+                }
+                if trimmed == "CONFIG_SPIRAM=n" || trimmed == "# CONFIG_SPIRAM is not set" {
+                    foundRootSetting = true
+                }
+                return text
+            }
+        if !foundRootSetting { lines.append("# CONFIG_SPIRAM is not set") }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .newlines) + "\n"
+    }
+}
+
 public struct StickS3FirmwareBuildPlanner {
     private let discovery: StickS3FirmwareToolDiscovery
 
@@ -433,12 +509,16 @@ public struct StickS3FirmwareBuildPlanner {
             }
             arguments = installation.prefixArguments + ["run", "--project-dir", source.path]
         case .espIDF:
-            let sdkconfig = cacheDirectory.appendingPathComponent("sdkconfig").path
+            let virtualConfig = try StickS3VirtualSDKConfig.prepare(
+                sourceDirectory: source,
+                cacheDirectory: cacheDirectory
+            )
             let projectInclude = source.appendingPathComponent(
                 ".sticks3-virtual-board/espidf_project_include.cmake").path
             let commonIDFArguments = [
                 "-C", source.path, "-B", buildRoot.path,
-                "-DSDKCONFIG=\(sdkconfig)",
+                "-DSDKCONFIG=\(virtualConfig.sdkconfig.path)",
+                "-DSDKCONFIG_DEFAULTS=\(virtualConfig.defaults.map(\.path).joined(separator: ";"))",
                 "-DIDF_TARGET=esp32s3",
             ]
             let preflightIDFArguments = commonIDFArguments + ["reconfigure"]

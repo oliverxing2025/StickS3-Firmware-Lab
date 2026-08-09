@@ -2,16 +2,19 @@
 set -euo pipefail
 
 DEST_DIR="${1:?destination Emulation directory is required}"
-QEMU_SOURCE="${STICKS3_QEMU_PATH:-}"
-
-if [[ -z "$QEMU_SOURCE" ]]; then
-    candidates=("$HOME"/.espressif/tools/qemu-xtensa/*/qemu/bin/qemu-system-xtensa(N.om))
-    (( ${#candidates[@]} > 0 )) && QEMU_SOURCE="$candidates[1]"
-fi
+QEMU_VERSION="esp_develop_9.2.2_20250817"
+QEMU_EXPECTED_SHA256="${STICKS3_QEMU_SHA256:-3a8eb6c4343087885c22750aab4ea3297be70382868b5688dbef7affd504b8d5}"
+QEMU_SOURCE="${STICKS3_QEMU_PATH:-$HOME/.espressif/tools/qemu-xtensa/$QEMU_VERSION/qemu/bin/qemu-system-xtensa}"
 
 if [[ -z "$QEMU_SOURCE" || ! -x "$QEMU_SOURCE" ]]; then
     print -u2 -- "QEMU not found; building app without the optional emulator runtime"
     exit 0
+fi
+
+QEMU_ACTUAL_SHA256="$(shasum -a 256 "$QEMU_SOURCE" | awk '{print $1}')"
+if [[ "$QEMU_ACTUAL_SHA256" != "$QEMU_EXPECTED_SHA256" ]]; then
+    print -u2 -- "QEMU checksum does not match the reviewed $QEMU_VERSION binary"
+    exit 65
 fi
 
 QEMU_ROOT="${QEMU_SOURCE:h:h}"
@@ -53,6 +56,16 @@ for library in "$DEST_DIR"/root/**/*.dylib(N); do
     codesign --force --timestamp=none --sign - "$library"
 done
 codesign --force --timestamp=none --sign - "$DEST_DIR/bin/qemu-system-xtensa"
+
+# Record the exact signed runtime payload without leaking source-machine paths.
+print -r -- "$QEMU_VERSION" > "$DEST_DIR/QEMU-VERSION.txt"
+(
+    cd "$DEST_DIR"
+    : > SHA256SUMS.txt
+    while IFS= read -r file; do
+        shasum -a 256 "$file" >> SHA256SUMS.txt
+    done < <(find bin root share -type f | LC_ALL=C sort)
+)
 
 # Verify the child process with Homebrew removed from the lookup path.
 env -i PATH=/usr/bin:/bin HOME=/private/tmp DYLD_ROOT_PATH="$DEST_DIR/root" \

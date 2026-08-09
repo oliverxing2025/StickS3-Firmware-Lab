@@ -13,4 +13,4 @@ echo "REBUILD-STEP:BUILD"
 "$PROJECT_DIR/scripts/build-app.sh"
 
 echo "REBUILD-STEP:SIGNING"
-codesign --verify --deep --strict "$PROJECT_DIR/build/Stick S3 虚拟设备.app"
+codesign --verify --deep --strict "$PROJECT_DIR/build/StickS3 固件实验台.app"

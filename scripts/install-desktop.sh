@@ -2,8 +2,8 @@
 set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
-SOURCE_APP="$PROJECT_DIR/build/Stick S3 虚拟设备.app"
-DESKTOP_APP="$HOME/Desktop/Stick S3 虚拟设备.app"
+SOURCE_APP="$PROJECT_DIR/build/StickS3 固件实验台.app"
+DESKTOP_APP="$HOME/Desktop/StickS3 固件实验台.app"
 
 "$PROJECT_DIR/scripts/build-app.sh" >/dev/null
 if [[ -e "$DESKTOP_APP" ]]; then

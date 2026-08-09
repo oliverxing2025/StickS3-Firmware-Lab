@@ -58,6 +58,9 @@ struct ContentView: View {
             model.start()
         }
         .onDisappear { model.stop() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            model.stop()
+        }
         .sheet(isPresented: $showsProjectManager) {
             ProjectManagerView(model: model)
         }
@@ -415,6 +418,31 @@ struct ContentView: View {
         .frame(width: baseFaceSize.width, height: baseFaceSize.height)
     }
 
+    @ViewBuilder
+    private var hostNetworkStatus: some View {
+        switch model.hostNetworkState {
+        case .idle:
+            Label(t("已准备主机数据通道，等待固件请求",
+                    "Host data channel ready; waiting for firmware"),
+                  systemImage: "network")
+                .foregroundStyle(.secondary)
+        case .requesting(let host):
+            Label(t("正在读取数据：\(host)", "Loading data: \(host)"),
+                  systemImage: "arrow.triangle.2.circlepath")
+                .foregroundStyle(.orange)
+        case .connected(let host, let updatedAt):
+            Label(t("数据已连接：\(host) · \(updatedAt.formatted(date: .omitted, time: .standard))",
+                    "Data connected: \(host) · \(updatedAt.formatted(date: .omitted, time: .standard))"),
+                  systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .failed(let host, let reason):
+            Label(t("数据不可用：\(host) · \(reason)",
+                    "Data unavailable: \(host) · \(reason)"),
+                  systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.red)
+        }
+    }
+
     private var inspector: some View {
         redesignedInspector
         .frame(width: inspectorWidth, alignment: .topLeading)
@@ -453,8 +481,6 @@ struct ContentView: View {
                         deviceButtonRows
                     }
                     .frame(width: 204, alignment: .topLeading)
-                    .disabled(model.hasActiveQEMUFirmware
-                              && !model.qemuBoardCapabilities.contains(.buttons))
 
                     Divider()
 
@@ -464,7 +490,6 @@ struct ContentView: View {
                         hardwareControlRows
                     }
                     .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .disabled(model.hasActiveQEMUFirmware)
                 }
             }
             .disabled(!(model.hasRunnableFirmware && !model.hasActiveQEMUFirmware) && !model.qemuControlsReady)
@@ -497,7 +522,7 @@ struct ContentView: View {
     }
 
     private var appVersion: String {
-        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.1.0"
     }
 
     private var orientationHint: String {
@@ -535,7 +560,7 @@ struct ContentView: View {
 
     private var inspectorHeader: some View {
         HStack(spacing: 10) {
-            Label("Stick S3 Virtual Device", systemImage: "display")
+            Label(t("StickS3 固件实验台", "StickS3 Firmware Lab"), systemImage: "display")
                 .font(.headline)
             Spacer()
             Button {
@@ -545,7 +570,7 @@ struct ContentView: View {
             }
             .buttonStyle(.bordered)
             .tint(.red)
-            .help(t("退出 Stick S3 虚拟设备", "Quit Stick S3 Virtual Device"))
+            .help(t("退出 StickS3 固件实验台", "Quit StickS3 Firmware Lab"))
         }
     }
 
@@ -588,6 +613,9 @@ struct ContentView: View {
                     Circle().fill(.green).frame(width: 7, height: 7)
                     Text(t("固件模拟正在运行", "Firmware simulation is running"))
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                if model.qemuBoardCapabilities.contains(.hostNetwork) {
+                    hostNetworkStatus.font(.caption)
                 }
             } else if model.hasRunnableFirmware {
                 HStack(spacing: 6) {
@@ -736,14 +764,40 @@ struct ContentView: View {
 
     private var deviceButtonRows: some View {
         VStack(spacing: 9) {
-            deviceButtonRow(title: t("蓝色前键", "Blue Front Button"),
-                            color: Color(rgb: 0x267BFF), square: false,
-                            button: .front) { model.blueButton(clicks: $0) }
-            deviceButtonRow(title: t("灰色侧键", "Gray Side Button"),
-                            color: Color(rgb: 0x777D87), square: true,
-                            button: .side) { model.grayButton(clicks: $0) }
+            Group {
+                deviceButtonRow(title: t("蓝色前键", "Blue Front Button"),
+                                color: Color(rgb: 0x267BFF), square: false,
+                                button: .front) { model.blueButton(clicks: $0) }
+                deviceButtonRow(title: t("灰色侧键", "Gray Side Button"),
+                                color: Color(rgb: 0x777D87), square: true,
+                                button: .side) { model.grayButton(clicks: $0) }
+            }
+            .disabled(model.hasActiveQEMUFirmware && !model.qemuControlsReady)
+
+            HStack(spacing: 6) {
+                shakeButton(t("左右晃动", "Side Shake"), symbol: "arrow.left.and.right",
+                            gesture: .horizontal)
+                shakeButton(t("上下晃动", "Up/Down Shake"), symbol: "arrow.up.and.down",
+                            gesture: .vertical)
+            }
+            .disabled(!model.canPerformDeviceShake || model.activeShakeGesture != nil)
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func shakeButton(_ label: String, symbol: String,
+                             gesture: DeviceShakeGesture) -> some View {
+        Button {
+            model.performDeviceShake(gesture)
+        } label: {
+            Label(label, systemImage: symbol)
+                .font(.caption2.bold())
+                .frame(maxWidth: .infinity, minHeight: 23)
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.mini)
+        .help(t("模拟 StickS3 的连续姿态晃动并自动回中",
+                "Simulate a continuous StickS3 motion gesture and return to center"))
     }
 
     private var commonHardwareControls: some View {
@@ -761,19 +815,23 @@ struct ContentView: View {
                 Text("\(Int(model.screenBrightnessPercent))%")
                     .monospacedDigit().frame(width: 38, alignment: .trailing)
             }
+            .disabled(model.hasActiveQEMUFirmware && !model.qemuDisplaySettingsReady)
             HStack {
                 Text(t("电量", "Battery"))
                 Slider(value: Binding(get: { model.batteryPercent },
                                       set: { model.setBatteryPercent($0) }), in: 0...100)
                 Text("\(Int(model.batteryPercent.rounded()))%")
             }
+            .disabled(model.hasActiveQEMUFirmware && !model.qemuPowerControlsReady)
             HStack(spacing: 8) {
                 Toggle(t("充电", "Charging"), isOn: Binding(get: { model.batteryCharging },
                                                 set: { model.setBatteryCharging($0) }))
                     .fixedSize()
+                    .disabled(model.hasActiveQEMUFirmware && !model.qemuPowerControlsReady)
                 Toggle(t("声音", "Sound"),
                        isOn: Binding(get: { model.soundEnabled }, set: { model.setSound($0) }))
                     .fixedSize()
+                    .disabled(model.hasActiveQEMUFirmware && !model.qemuAudioControlsReady)
                 Spacer(minLength: 2)
                 Text(t("刷新率", "FPS")).font(.caption).fixedSize()
                 HStack(spacing: 3) {
@@ -781,6 +839,7 @@ struct ContentView: View {
                     fpsButton(60)
                 }
                 .fixedSize()
+                .disabled(model.hasActiveQEMUFirmware && !model.qemuDisplaySettingsReady)
             }
         }
     }

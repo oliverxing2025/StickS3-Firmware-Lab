@@ -39,8 +39,8 @@ cleanup() {
     fi
 }
 trap cleanup EXIT
-STAGED_APP="$STAGE_DIR/Stick S3 虚拟设备.app"
-PREVIOUS_APP="$SUPPORT_DIR/Previous Stick S3 虚拟设备.app"
+STAGED_APP="$STAGE_DIR/StickS3 固件实验台.app"
+PREVIOUS_APP="$SUPPORT_DIR/Previous StickS3 固件实验台.app"
 
 ditto "$SOURCE_APP" "$STAGED_APP"
 codesign --verify --deep --strict "$STAGED_APP"

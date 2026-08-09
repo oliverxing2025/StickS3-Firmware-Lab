@@ -1,6 +1,6 @@
 import Foundation
 
-/// 开源版不假定本机已经存在任何私有凭据。
+/// 可分发版本不假定本机已经存在任何私有凭据。
 /// Bridge Token 只能由启动环境显式提供，不读取钥匙串，不写入配置。
 enum BridgeCredentialStore {
     static func loadToken(projectRoot: String?) -> String {

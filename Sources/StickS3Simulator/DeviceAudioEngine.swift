@@ -85,31 +85,6 @@ final class DeviceAudioEngine {
                  amplitude: 0.40 * volumeScale, envelope: .codex)
     }
 
-    // 与水果机 fruit_audio.c 的音符、时长和正弦包络一致。
-    func playFruit(sound: Int32) {
-        if sound == 0 {
-            playFruitBellTick()
-            return
-        }
-        let pairs: [(Double, Int)]
-        switch sound {
-        case 1: pairs = [(440, 55), (660, 70)]
-        case 2: pairs = [(523, 90), (659, 90), (784, 100), (1047, 180)]
-        case 3: pairs = [(2093, 42), (0, 18), (1047, 58), (1319, 90)]
-        case 4: pairs = [(2093, 42), (0, 16), (1047, 55), (1319, 55), (1661, 110)]
-        case 5: pairs = [(2349, 42), (0, 14), (1175, 48), (1568, 48), (1976, 55), (2637, 130)]
-        case 6: pairs = [(2637, 45), (0, 12), (1319, 42), (1661, 42), (2093, 48), (2637, 60), (0, 22), (2093, 42), (2637, 42), (3136, 170)]
-        case 7: pairs = [(2637, 28), (0, 12), (2093, 26), (0, 13), (2349, 29), (0, 14), (1760, 27), (0, 15), (1976, 32), (0, 18), (1319, 42)]
-        case 8: pairs = [(784, 70), (988, 70), (1175, 70), (1568, 190), (1175, 80), (1568, 210)]
-        case 9: pairs = [(2093, 42), (0, 20), (392, 65), (330, 90)]
-        case 10: pairs = [(523, 65), (659, 65), (784, 65), (1047, 130), (0, 45), (784, 55), (988, 55), (1175, 55), (1568, 145), (0, 35), (1319, 70), (1568, 70), (2093, 260)]
-        case 11: pairs = [(147, 60), (196, 60), (294, 60), (440, 70), (659, 75), (988, 90), (1319, 220)]
-        default: return
-        }
-        schedule(segments: pairs.map { Segment(frequency: $0.0, durationMs: $0.1) },
-                 amplitude: 0.12, envelope: .fruit)
-    }
-
     // 液态沙漏 hourglass_chime.c 的完成旋律。
     func playHourglassCompletion() {
         let notes = [(659.0, 115), (0, 28), (784, 135), (0, 28), (1047, 240), (0, 35)]
@@ -117,7 +92,43 @@ final class DeviceAudioEngine {
                  amplitude: 0.13, envelope: .liquid)
     }
 
-    private enum Envelope { case breakout, codex, fruit, liquid }
+    // Fruit Machine's private QEMU adapter reports the same fruit_sound_t
+    // value used by the physical ES8311 path. Recreate those short cues on the
+    // Mac so game timing never waits for unsupported virtual I2S hardware.
+    func playFruit(sound: Int) {
+        if sound == 0 {
+            playFruitBellTick()
+            return
+        }
+        let notes: [(Double, Int)]
+        switch sound {
+        case 1: notes = [(440, 55), (660, 70)]
+        case 2: notes = [(523, 90), (659, 90), (784, 100), (1047, 180)]
+        case 3: notes = [(2093, 42), (0, 18), (1047, 58), (1319, 90)]
+        case 4: notes = [(2093, 42), (0, 16), (1047, 55), (1319, 55), (1661, 110)]
+        case 5: notes = [(2349, 42), (0, 14), (1175, 48), (1568, 48), (1976, 55), (2637, 130)]
+        case 6: notes = [(2637, 45), (0, 12), (1319, 42), (1661, 42),
+                         (2093, 48), (2637, 60), (0, 22), (2093, 42),
+                         (2637, 42), (3136, 170)]
+        case 7: notes = [(2637, 28), (0, 12), (2093, 26), (0, 13),
+                         (2349, 29), (0, 14), (1760, 27), (0, 15),
+                         (1976, 32), (0, 18), (1319, 42)]
+        case 8: notes = [(784, 70), (988, 70), (1175, 70), (1568, 190),
+                         (1175, 80), (1568, 210)]
+        case 9: notes = [(2093, 42), (0, 20), (392, 65), (330, 90)]
+        case 10: notes = [(523, 65), (659, 65), (784, 65), (1047, 130),
+                          (0, 45), (784, 55), (988, 55), (1175, 55),
+                          (1568, 145), (0, 35), (1319, 70), (1568, 70),
+                          (2093, 260)]
+        case 11: notes = [(147, 60), (196, 60), (294, 60), (440, 70),
+                          (659, 75), (988, 90), (1319, 220)]
+        default: return
+        }
+        schedule(segments: notes.map { Segment(frequency: $0.0, durationMs: $0.1) },
+                 amplitude: 0.12, envelope: .fruit)
+    }
+
+    private enum Envelope { case breakout, codex, liquid, fruit }
 
     private func schedule(segments: [Segment], amplitude: Double, envelope: Envelope) {
         guard ready else { return }
@@ -165,10 +176,12 @@ final class DeviceAudioEngine {
         if !player.isPlaying { player.play() }
     }
 
+    // Exact three-harmonic bell used by fruit_audio.c on the physical StickS3.
     private func playFruitBellTick() {
         let count = Int(sampleRate * 0.024)
         guard ready,
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)),
+              let buffer = AVAudioPCMBuffer(
+                pcmFormat: format, frameCapacity: AVAudioFrameCount(count)),
               let samples = buffer.floatChannelData?[0] else { return }
         buffer.frameLength = AVAudioFrameCount(count)
         for sample in 0..<count {

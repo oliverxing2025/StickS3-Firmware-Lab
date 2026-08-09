@@ -223,7 +223,9 @@ public struct StickS3QEMUCommandBuilder {
                 "-drive", "file=\(efuseURL.path),if=none,format=raw,id=efuse",
                 "-global", "driver=nvram.esp32s3.efuse,property=drive,value=efuse",
                 "-global", "driver=timer.esp32s3.timg,property=wdt_disable,value=true",
-                "-nographic",
+                "-display", "none",
+                "-monitor", "none",
+                "-serial", "stdio",
             ],
             environment: environment
         )

@@ -26,6 +26,10 @@ Panel_StickS3Virtual::Panel_StickS3Virtual() : Panel_FrameBufferBase() {
 }
 
 Panel_StickS3Virtual::~Panel_StickS3Virtual() {
+  if (_frame_task) {
+    vTaskDelete(_frame_task);
+    _frame_task = nullptr;
+  }
   if (_framebuffer) heap_free(_framebuffer);
   if (_lines_buffer) heap_free(_lines_buffer);
 }
@@ -46,6 +50,10 @@ bool Panel_StickS3Virtual::init(bool use_reset) {
   s3vd_bridge_begin();
   const bool result = Panel_FrameBufferBase::init(use_reset);
   sendFrameIfDue(true);
+  if (!_frame_task) {
+    xTaskCreatePinnedToCore(frameTaskEntry, "s3vd-frame", 3072, this, 1,
+                            &_frame_task, 0);
+  }
   return result;
 }
 
@@ -58,21 +66,32 @@ color_depth_t Panel_StickS3Virtual::setColorDepth(color_depth_t) {
 void Panel_StickS3Virtual::display(uint_fast16_t x, uint_fast16_t y, uint_fast16_t w, uint_fast16_t h) {
   Panel_FrameBufferBase::display(x, y, w, h);
   _dirty = true;
-  sendFrameIfDue(false);
+  _last_update_micros = esp_timer_get_time();
 }
 
 void Panel_StickS3Virtual::endTransaction(void) {
   _dirty = true;
-  sendFrameIfDue(false);
+  _last_update_micros = esp_timer_get_time();
 }
 
 void Panel_StickS3Virtual::sendFrameIfDue(bool force) {
   if (!_dirty || !_framebuffer) return;
   const int64_t now = esp_timer_get_time();
-  if (!force && now - _last_frame_micros < 33333) return;
+  // LVGL flushes one logical frame through several rectangles. Wait for a
+  // short quiet window so the host never sees a half-painted frame.
+  if (!force && now - _last_update_micros < 2000) return;
+  if (!force && now - _last_frame_micros < s3vd_frame_interval_micros()) return;
   _last_frame_micros = now;
   _dirty = false;
   s3vd_send_frame_rgb565_be(_framebuffer, _cfg.panel_width, _cfg.panel_height);
+}
+
+void Panel_StickS3Virtual::frameTaskEntry(void* argument) {
+  auto* panel = static_cast<Panel_StickS3Virtual*>(argument);
+  while (true) {
+    panel->sendFrameIfDue(false);
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
 }
 
 }  // namespace v1

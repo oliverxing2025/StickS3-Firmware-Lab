@@ -16,15 +16,6 @@ public enum SimulatorSourceFingerprint {
         switch runtime {
         case .codex:
             return ["generated/vibe_stick_ui_assets.c", "generated/vibe_stick_ui_assets.h", "src/main.c"]
-        case .fruit:
-            return [
-                "include/fiery_dragon_image.h", "include/fruit_controls_image.h",
-                "include/fruit_controls_pending_image.h", "include/fruit_game_config.h",
-                "include/fruit_header_image.h", "include/fruit_track_image.h",
-                "src/fiery_dragon_image.c", "src/fruit_controls_image.c",
-                "src/fruit_controls_pending_image.c", "src/fruit_game_config.c",
-                "src/fruit_header_image.c", "src/fruit_track_image.c", "src/main.c",
-            ]
         case .hourglass, .hourglassLiquid:
             return ["include/hourglass_physics.h", "src/hourglass_physics.c", "src/main.c"]
         case .breakout:

@@ -2,14 +2,12 @@ import AppKit
 import BreakoutCore
 import CodexCore
 import Foundation
-import FruitCore
 import HourglassCore
 import HourglassLiquidCore
 import SimulatorSupport
 
 enum VirtualProject: String, CaseIterable, Identifiable {
     case breakout = "Neon Brick Pulse"
-    case fruit = "水果机"
     case hourglass = "沙漏"
     case hourglassLiquid = "液态沙漏"
     case codex = "VibeStick-Codex"
@@ -18,7 +16,6 @@ enum VirtualProject: String, CaseIterable, Identifiable {
     var runtimeID: SimulatorRuntimeID {
         switch self {
         case .breakout: return .breakout
-        case .fruit: return .fruit
         case .hourglass: return .hourglass
         case .hourglassLiquid: return .hourglassLiquid
         case .codex: return .codex
@@ -28,7 +25,6 @@ enum VirtualProject: String, CaseIterable, Identifiable {
     var firmwareName: String {
         switch self {
         case .breakout: return "VibeStick-Neon-Brick-Pulse"
-        case .fruit: return "VibeStick-Fruit-Machine"
         case .hourglass: return "VibeStick-Hourglass"
         case .hourglassLiquid: return "VibeStick-Hourglass-Liquid"
         case .codex: return "VibeStick-Codex"
@@ -37,7 +33,7 @@ enum VirtualProject: String, CaseIterable, Identifiable {
 
     var orientationHint: String {
         switch self {
-        case .breakout, .fruit, .hourglass, .hourglassLiquid: return "135 × 240 竖屏固件"
+        case .breakout, .hourglass, .hourglassLiquid: return "135 × 240 竖屏固件"
         case .codex: return "135 × 240 正放 · 240 × 135 横放自适应固件"
         }
     }
@@ -49,7 +45,6 @@ enum VirtualProject: String, CaseIterable, Identifiable {
     init?(runtimeID: SimulatorRuntimeID) {
         switch runtimeID {
         case .breakout: self = .breakout
-        case .fruit: self = .fruit
         case .hourglass: self = .hourglass
         case .hourglassLiquid: self = .hourglassLiquid
         case .codex: self = .codex
@@ -76,6 +71,11 @@ enum DevicePose: String, CaseIterable, Identifiable {
 }
 
 enum PhysicalButton: String { case front = "FRONT", side = "SIDE" }
+
+enum DeviceShakeGesture: String {
+    case horizontal = "HORIZONTAL"
+    case vertical = "VERTICAL"
+}
 
 struct CodexMockState {
     var status = "OFFLINE"
@@ -131,8 +131,6 @@ final class SimulatorModel: ObservableObject {
     @Published var paddle = BreakoutPaddleSnapshot()
     @Published var bricks: [BrickViewData] = []
     @Published var breakoutFrameRGBA = Data()
-    @Published var fruitFrameRGBA = Data()
-    @Published var fruitSnapshot = FruitSnapshot()
     @Published var hourglassFrameRGBA = Data()
     @Published var hourglassLiquidFrameRGBA = Data()
     @Published var hourglassSnapshot = HourglassSnapshot()
@@ -177,11 +175,14 @@ final class SimulatorModel: ObservableObject {
     @Published private(set) var qemuFrameWidth = 135
     @Published private(set) var qemuFrameHeight = 240
     @Published private(set) var qemuBoardCapabilities: StickS3VirtualBoardCapabilities = []
+    @Published private(set) var qemuBoardReport: StickS3VirtualBoardReport?
+    @Published private(set) var hostNetworkState: HostNetworkState = .idle
+    @Published private(set) var activeShakeGesture: DeviceShakeGesture?
     @Published private(set) var platformIOIsAvailable = false
     @Published private(set) var espIDFIsAvailable = false
 
+    private var qemuLogUTF8Count = 0
     private var context: UnsafeMutableRawPointer?
-    private var fruitContext: UnsafeMutableRawPointer?
     private var hourglassContext: UnsafeMutableRawPointer?
     private var hourglassLiquidContext: UnsafeMutableRawPointer?
     private var codexFirmwareContext: UnsafeMutableRawPointer?
@@ -189,14 +190,11 @@ final class SimulatorModel: ObservableObject {
     private var lastTick = CACurrentMediaTime()
     private var startedAt = CACurrentMediaTime()
     private var lastSoundSerial: UInt32 = 0
-    private var lastFruitSoundSerial: UInt32 = 0
     private var lastLiquidChimeSerial: UInt32 = 0
     private var lastBreakoutFrameSerial = UInt32.max
-    private var lastFruitFrameSerial = UInt32.max
     private var lastHourglassFrameSerial = UInt32.max
     private var lastLiquidFrameSerial = UInt32.max
     private var lastCodexFrameSerial = UInt32.max
-    private var fruitMotionArmed = true
     private var keyDownMonitor: Any?
     private var keyUpMonitor: Any?
     private var lastBridgePoll = 0.0
@@ -215,7 +213,16 @@ final class SimulatorModel: ObservableObject {
     private var qemuConsolePipe: Pipe?
     private var qemuInputPipe: Pipe?
     private var qemuWorkingFlashURL: URL?
-    private var qemuBoardParser = StickS3VirtualBoardStreamParser()
+    private var deviceShakeTask: Task<Void, Never>?
+    private var qemuFrameConversionTask: Task<Void, Never>?
+    private var pendingQEMUFrame: StickS3VirtualBoardFrame?
+    private var qemuFrameGate = QEMUFrameGate()
+    private var qemuFrameGeneration: UInt64 = 0
+    private let qemuOutputDecoder = QEMUOutputDecoder()
+    private let hostNetworkProxy = HostNetworkProxy()
+    private var hostNetworkTasks: [UInt32: Task<Void, Never>] = [:]
+    private var qemuOutputGeneration: UInt64 = 0
+    private var hasReportedQEMUAudio = false
     private let deviceAudio = DeviceAudioEngine()
     private var poseAudioMutedUntil = 0.0
     private var audioPlaybackAllowed: Bool {
@@ -272,7 +279,6 @@ final class SimulatorModel: ObservableObject {
             selectedProject = first
         }
         context = breakout_create(Self.screenWidth, Self.screenHeight)
-        fruitContext = fruit_create()
         hourglassContext = hourglass_create()
         hourglassLiquidContext = hourglass_liquid_create()
         codexFirmwareContext = codex_firmware_create()
@@ -284,7 +290,6 @@ final class SimulatorModel: ObservableObject {
         breakout_load_persistent(context, high, unlocked)
         breakout_set_sound_enabled(context, soundEnabled)
         refreshSnapshot()
-        refreshFruitSnapshot()
         refreshHourglassSnapshot(liquid: false)
         refreshHourglassSnapshot(liquid: true)
         syncCodexFirmwareState(nowMs: 0)
@@ -294,11 +299,11 @@ final class SimulatorModel: ObservableObject {
     }
 
     isolated deinit {
+        deviceShakeTask?.cancel()
         timer?.invalidate()
         if let keyDownMonitor { NSEvent.removeMonitor(keyDownMonitor) }
         if let keyUpMonitor { NSEvent.removeMonitor(keyUpMonitor) }
         breakout_destroy(context)
-        fruit_destroy(fruitContext)
         hourglass_destroy(hourglassContext)
         hourglass_liquid_destroy(hourglassLiquidContext)
         codex_firmware_destroy(codexFirmwareContext)
@@ -395,9 +400,9 @@ final class SimulatorModel: ObservableObject {
         let updaterScript = simulatorProjectRoot
             .appendingPathComponent("scripts/install-built-app-and-relaunch.sh")
         let builtApp = simulatorProjectRoot
-            .appendingPathComponent("build/Stick S3 虚拟设备.app", isDirectory: true)
+            .appendingPathComponent("build/StickS3 固件实验台.app", isDirectory: true)
         let desktopApp = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Desktop/Stick S3 虚拟设备.app", isDirectory: true)
+            .appendingPathComponent("Desktop/StickS3 固件实验台.app", isDirectory: true)
 
         guard FileManager.default.isExecutableFile(atPath: updaterScript.path),
               FileManager.default.fileExists(atPath: builtApp.path) else {
@@ -419,6 +424,9 @@ final class SimulatorModel: ObservableObject {
         updater.standardError = FileHandle.nullDevice
 
         do {
+            // The updater waits for this app to exit before replacing it. Stop
+            // QEMU synchronously first so it can never survive into the new app.
+            stopQEMU()
             try updater.run()
             rebuildPhase = .installing
             rebuildLog += "\n构建成功。模拟器将自动退出、更新桌面应用并重新打开。\n"
@@ -488,14 +496,21 @@ final class SimulatorModel: ObservableObject {
             && qemuFrameRGBA.count == qemuFrameWidth * qemuFrameHeight * 4
     }
     var qemuControlsReady: Bool {
-        qemuBoardCapabilities.contains(.buttons) || qemuBoardCapabilities.contains(.bmi270)
+        guard let report = qemuBoardReport,
+              report.compatibility != .unsupported else { return false }
+        return report.capabilities.contains(.buttons) || report.capabilities.contains(.bmi270)
     }
+    var qemuPowerControlsReady: Bool { qemuBoardCapabilities.contains(.power) }
+    var qemuAudioControlsReady: Bool { qemuBoardCapabilities.contains(.audio) }
+    var qemuDisplaySettingsReady: Bool { qemuBoardCapabilities.contains(.display) }
     var qemuIsAvailable: Bool { StickS3QEMUDiscovery().locate() != nil }
 
     func canStartQEMU(_ item: SimulatorFirmwareCatalogItem) -> Bool {
         guard qemuIsAvailable,
               let referenceID = item.projectReferenceID,
-              let project = testProjects.first(where: { $0.id == referenceID }) else { return false }
+              let project = testProjects.first(where: { $0.id == referenceID }),
+              project.runtimeID == nil,
+              project.hardwareProfile?.compatibility != .unsupported else { return false }
         return StickS3FirmwareBuildPlanner().canBuild(project)
     }
 
@@ -508,6 +523,7 @@ final class SimulatorModel: ObservableObject {
         }
         stopQEMU()
         qemuLog = ""
+        qemuLogUTF8Count = 0
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
             .appendingPathComponent("Stick S3 Firmware Simulator/QEMU Sessions", isDirectory: true)
             .appendingPathComponent(project.id.uuidString, isDirectory: true)
@@ -536,11 +552,46 @@ final class SimulatorModel: ObservableObject {
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
             let buildCache = support.appendingPathComponent("BuildCache", isDirectory: true)
             try FileManager.default.createDirectory(at: buildCache, withIntermediateDirectories: true)
+            let adapterDirectory = Bundle.main.resourceURL?
+                .appendingPathComponent("VirtualBoard", isDirectory: true)
+            let cacheSignature = try StickS3FirmwareBuildCacheSignature.calculate(
+                for: project,
+                adapterDirectory: adapterDirectory
+            )
+            let signatureFile = support.appendingPathComponent("build-cache-signature.txt")
+            let cachedSignature = try? String(contentsOf: signatureFile, encoding: .utf8)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            let sourceFlash = support.appendingPathComponent("source-flash.bin")
+            let workingFlash = support.appendingPathComponent("working-flash.bin")
+            if cachedSignature == cacheSignature,
+               FileManager.default.fileExists(atPath: sourceFlash.path),
+               FileManager.default.fileExists(atPath: workingFlash.path) {
+                var cachedArtifacts = project
+                cachedArtifacts.sourcePath = buildCache.path
+                cachedArtifacts.firmwarePath = buildCache.path
+                qemuState = .starting
+                qemuFirmwareName = project.displayName
+                qemuLog = "源码和模拟适配未变化，正在直接启动：\(project.displayName)\n"
+                launchQEMU(
+                    project: project,
+                    imageProject: cachedArtifacts,
+                    installation: installation,
+                    support: support,
+                    cacheSignature: cacheSignature
+                )
+                return
+            }
             let buildSource = try StickS3FirmwareBuildWorkspace().prepare(
                 project: project,
                 at: buildCache.appendingPathComponent("Source", isDirectory: true)
             )
-            try StickS3VirtualBoardInjector().inject(into: buildSource)
+            let detectedProfile = StickS3VirtualHardwareDetector().detect(project: project)
+            var hardwareProfile = project.hardwareProfile ?? detectedProfile
+            // New bridge capabilities can be discovered without discarding a
+            // customer's saved/calibrated axis and button mapping.
+            hardwareProfile.capabilities.formUnion(detectedProfile.capabilities)
+            try StickS3VirtualBoardInjector().inject(
+                into: buildSource, hardwareProfile: hardwareProfile)
             let plan = try StickS3FirmwareBuildPlanner().makePlan(for: buildSource, cacheDirectory: buildCache)
             qemuState = .starting
             qemuFirmwareName = project.displayName
@@ -551,7 +602,8 @@ final class SimulatorModel: ObservableObject {
                 isPreflight: plan.preflightArguments != nil,
                 project: project,
                 installation: installation,
-                support: support
+                support: support,
+                cacheSignature: cacheSignature
             )
         } catch {
             firmwareBuildProcess = nil
@@ -568,7 +620,8 @@ final class SimulatorModel: ObservableObject {
         isPreflight: Bool,
         project: SimulatorProjectReference,
         installation: StickS3QEMUInstallation,
-        support: URL
+        support: URL,
+        cacheSignature: String
     ) {
         let process = Process()
         let output = Pipe()
@@ -604,12 +657,14 @@ final class SimulatorModel: ObservableObject {
                         isPreflight: false,
                         project: project,
                         installation: installation,
-                        support: support
+                        support: support,
+                        cacheSignature: cacheSignature
                     )
                 } else {
                     self.appendQEMULog("\n构建成功，正在合并并校验完整 Flash…\n")
                     self.launchQEMU(project: project, imageProject: plan.artifactProject,
-                                    installation: installation, support: support)
+                                    installation: installation, support: support,
+                                    cacheSignature: cacheSignature)
                 }
             }
         }
@@ -641,7 +696,8 @@ final class SimulatorModel: ObservableObject {
         project: SimulatorProjectReference,
         imageProject: SimulatorProjectReference,
         installation: StickS3QEMUInstallation,
-        support: URL
+        support: URL,
+        cacheSignature: String
     ) {
         do {
             try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
@@ -660,6 +716,11 @@ final class SimulatorModel: ObservableObject {
             } else if !FileManager.default.fileExists(atPath: workingFlash.path) {
                 try FileManager.default.copyItem(at: sourceSnapshot, to: workingFlash)
             }
+            try (cacheSignature + "\n").write(
+                to: support.appendingPathComponent("build-cache-signature.txt"),
+                atomically: true,
+                encoding: .utf8
+            )
             let command = try StickS3QEMUCommandBuilder().makeCommand(
                 installation: installation,
                 flashImageURL: workingFlash
@@ -685,15 +746,23 @@ final class SimulatorModel: ObservableObject {
             qemuInputPipe = input
             qemuWorkingFlashURL = workingFlash
 
-            qemuBoardParser = StickS3VirtualBoardStreamParser()
+            qemuOutputGeneration = qemuOutputDecoder.reset()
+            resetQEMUFramePipeline()
+            hasReportedQEMUAudio = false
             qemuBoardCapabilities = []
+            qemuBoardReport = nil
             qemuFrameRGBA = Data()
+            let outputDecoder = qemuOutputDecoder
+            let outputGeneration = qemuOutputGeneration
             console.fileHandleForReading.readabilityHandler = { [weak self] handle in
                 let data = handle.availableData
                 guard !data.isEmpty else { return }
-                Task { @MainActor [weak self] in self?.handleQEMUOutput(data) }
+                outputDecoder.submit(data, generation: outputGeneration) { [weak self] events, generation in
+                    self?.handleQEMUEvents(events, generation: generation)
+                }
             }
             process.terminationHandler = { [weak self] finished in
+                ChildProcessRegistry.shared.unregister(finished)
                 console.fileHandleForReading.readabilityHandler = nil
                 Task { @MainActor [weak self] in
                     guard let self, self.qemuProcess === finished else { return }
@@ -706,7 +775,15 @@ final class SimulatorModel: ObservableObject {
                     }
                 }
             }
+            // The in-memory Process reference is not sufficient after a host
+            // crash. The persisted session registry enforces one QEMU per project.
+            ChildProcessRegistry.shared.terminateSession(project.id.uuidString)
             try process.run()
+            ChildProcessRegistry.shared.register(
+                process,
+                sessionID: project.id.uuidString,
+                executableURL: command.executableURL
+            )
             appendQEMULog("等待固件进入应用调度器…\n")
         } catch {
             qemuProcess = nil
@@ -718,16 +795,27 @@ final class SimulatorModel: ObservableObject {
     }
 
     func stopQEMU() {
+        deviceShakeTask?.cancel()
+        deviceShakeTask = nil
+        activeShakeGesture = nil
         firmwareBuildPipe?.fileHandleForReading.readabilityHandler = nil
         if let process = firmwareBuildProcess, process.isRunning { process.terminate() }
         firmwareBuildProcess = nil
         firmwareBuildPipe = nil
         qemuConsolePipe?.fileHandleForReading.readabilityHandler = nil
-        if let process = qemuProcess, process.isRunning { process.terminate() }
+        qemuOutputGeneration = qemuOutputDecoder.reset()
+        for task in hostNetworkTasks.values { task.cancel() }
+        hostNetworkTasks.removeAll()
+        hostNetworkState = .idle
+        resetQEMUFramePipeline()
+        if let process = qemuProcess, process.isRunning {
+            ChildProcessRegistry.shared.terminate(process)
+        }
         qemuProcess = nil
         qemuConsolePipe = nil
         qemuInputPipe = nil
         qemuBoardCapabilities = []
+        qemuBoardReport = nil
         qemuFrameRGBA = Data()
         if qemuState.isActive { qemuState = .stopped }
     }
@@ -739,7 +827,11 @@ final class SimulatorModel: ObservableObject {
 
     private func appendQEMULog(_ output: String) {
         qemuLog += output
-        if qemuLog.count > 80_000 { qemuLog = String(qemuLog.suffix(80_000)) }
+        qemuLogUTF8Count += output.utf8.count
+        if qemuLogUTF8Count > 80_000 {
+            qemuLog = String(decoding: qemuLog.utf8.suffix(60_000), as: UTF8.self)
+            qemuLogUTF8Count = qemuLog.utf8.count
+        }
         if qemuState == .starting {
             let normalized = output.lowercased()
             if normalized.contains("cpu_start: starting scheduler")
@@ -751,18 +843,27 @@ final class SimulatorModel: ObservableObject {
         }
     }
 
-    private func handleQEMUOutput(_ data: Data) {
-        for event in qemuBoardParser.append(data) {
+    private func handleQEMUEvents(_ events: [StickS3VirtualBoardEvent], generation: UInt64) {
+        guard generation == qemuOutputGeneration else { return }
+        for event in events {
             switch event {
-            case .ready(let capabilities):
-                qemuBoardCapabilities = capabilities
+            case .ready(let report):
+                qemuBoardReport = report
+                qemuBoardCapabilities = report.capabilities
                 qemuState = .running
                 eventText = "QEMU FIRMWARE BOOTED"
-                appendQEMULog("\nStickS3 屏幕与控制桥接已就绪。\n")
+                appendQEMULog("\nStickS3 虚拟硬件已回报：\(report.compatibility.title)。\n")
+                syncQEMUDeviceState()
             case .frame(let frame):
-                qemuFrameWidth = frame.width
-                qemuFrameHeight = frame.height
-                qemuFrameRGBA = rgbaData(fromRGB565LE: frame.rgb565)
+                queueQEMUFrame(frame)
+            case .audio(let sound):
+                if !hasReportedQEMUAudio {
+                    hasReportedQEMUAudio = true
+                    appendQEMULog("\n虚拟音频桥已接收固件音效。\n")
+                }
+                if audioPlaybackAllowed { deviceAudio.playFruit(sound: Int(sound)) }
+            case .hostNetworkRequest(let request):
+                handleHostNetworkRequest(request, generation: generation)
             case .log(let bytes):
                 guard let text = String(data: bytes, encoding: .utf8) else { continue }
                 appendQEMULog(text)
@@ -770,26 +871,127 @@ final class SimulatorModel: ObservableObject {
         }
     }
 
+    private func handleHostNetworkRequest(
+        _ request: StickS3HostNetworkRequest, generation: UInt64
+    ) {
+        hostNetworkTasks[request.requestID]?.cancel()
+        let host = URL(string: request.url)?.host ?? "invalid"
+        hostNetworkState = .requesting(host: host)
+        let proxy = hostNetworkProxy
+        hostNetworkTasks[request.requestID] = Task { [weak self] in
+            let result = await proxy.perform(request)
+            guard !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self, generation == self.qemuOutputGeneration else { return }
+                self.hostNetworkTasks[request.requestID] = nil
+                self.hostNetworkState = result.errorCode == 0
+                    ? .connected(host: result.host, updatedAt: Date())
+                    : .failed(host: result.host, reason: self.hostNetworkFailure(result.errorCode))
+                let packet = StickS3VirtualBoardPacketEncoder().hostNetworkResponse(
+                    requestID: result.requestID, statusCode: result.statusCode,
+                    errorCode: result.errorCode, body: result.body)
+                self.sendQEMUPacket(packet)
+                if result.errorCode == 0 {
+                    self.appendQEMULog("\n主机数据通道已连接：\(result.host)。\n")
+                } else {
+                    self.appendQEMULog("\n主机数据请求失败：\(result.host)（\(self.hostNetworkFailure(result.errorCode))）。\n")
+                }
+            }
+        }
+    }
+
+    private func hostNetworkFailure(_ code: Int) -> String {
+        switch URLError.Code(rawValue: code) {
+        case .badURL: "地址无效"
+        case .cannotFindHost: "找不到数据服务"
+        case .cannotConnectToHost: "无法连接数据服务"
+        case .timedOut: "连接超时"
+        case .userAuthenticationRequired: "需要身份验证"
+        case .dataLengthExceedsMaximum: "响应超过 65 KB 限制"
+        case .unsupportedURL: "仅允许连接本机数据服务"
+        default: "网络错误 \(code)"
+        }
+    }
+
     private func sendQEMUPacket(_ packet: Data) {
-        guard qemuState == .running, qemuBoardCapabilities.contains(.buttons) || qemuBoardCapabilities.contains(.bmi270) else { return }
+        guard qemuState == .running, !qemuBoardCapabilities.isEmpty else { return }
         do { try qemuInputPipe?.fileHandleForWriting.write(contentsOf: packet) }
         catch { appendQEMULog("\n控制输入发送失败：\(error.localizedDescription)\n") }
     }
 
     private func sendQEMUMotionIfReady() {
         guard qemuBoardCapabilities.contains(.bmi270) else { return }
+        let sensor = StickS3VirtualBoardMotionMap().sensorVector(
+            report: qemuBoardReport,
+            logicalX: Float(tilt), logicalY: Float(tiltY), logicalZ: Float(tiltZ))
         sendQEMUPacket(StickS3VirtualBoardPacketEncoder().motion(
-            x: Float(tilt), y: Float(tiltY), z: Float(tiltZ)))
+            x: sensor.x, y: sensor.y, z: sensor.z))
     }
 
-    private func rgbaData(fromRGB565LE pixels: Data) -> Data {
-        var rgba = Data(capacity: pixels.count * 2)
-        for offset in stride(from: 0, to: pixels.count - 1, by: 2) {
-            let value = UInt16(pixels[offset]) | (UInt16(pixels[offset + 1]) << 8)
-            rgba.append(UInt8((UInt32(value >> 11) * 255 + 15) / 31))
-            rgba.append(UInt8((UInt32((value >> 5) & 0x3F) * 255 + 31) / 63))
-            rgba.append(UInt8((UInt32(value & 0x1F) * 255 + 15) / 31))
-            rgba.append(255)
+    private func queueQEMUFrame(_ frame: StickS3VirtualBoardFrame) {
+        // Sequence numbers advance on every packet. Pixel equality is the real
+        // duplicate test and avoids both conversion work and SwiftUI updates.
+        guard qemuFrameGate.accept(frame) else { return }
+        pendingQEMUFrame = frame
+        startNextQEMUFrameConversionIfNeeded()
+    }
+
+    private func startNextQEMUFrameConversionIfNeeded() {
+        guard qemuFrameConversionTask == nil, let frame = pendingQEMUFrame else { return }
+        pendingQEMUFrame = nil
+        let generation = qemuFrameGeneration
+        qemuFrameConversionTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let rgba = Self.rgbaData(fromRGB565LE: frame.rgb565)
+            guard !Task.isCancelled else { return }
+            await self?.finishQEMUFrameConversion(frame: frame, rgba: rgba, generation: generation)
+        }
+    }
+
+    private func finishQEMUFrameConversion(
+        frame: StickS3VirtualBoardFrame,
+        rgba: Data,
+        generation: UInt64
+    ) {
+        qemuFrameConversionTask = nil
+        guard generation == qemuFrameGeneration else { return }
+        // Always publish the completed frame before converting the newest pending
+        // frame. Dropping it whenever another frame is waiting can starve SwiftUI
+        // indefinitely during continuous animation: every conversion finishes with
+        // a newer frame pending, so the display never receives an image at all.
+        qemuFrameWidth = frame.width
+        qemuFrameHeight = frame.height
+        qemuFrameRGBA = rgba
+        // The pending slot is still latest-only, so sustained output remains bounded
+        // to one conversion plus one queued frame instead of building a backlog.
+        startNextQEMUFrameConversionIfNeeded()
+    }
+
+    private func resetQEMUFramePipeline() {
+        qemuFrameGeneration &+= 1
+        qemuFrameConversionTask?.cancel()
+        qemuFrameConversionTask = nil
+        pendingQEMUFrame = nil
+        qemuFrameGate.reset()
+    }
+
+    nonisolated private static func rgbaData(fromRGB565LE pixels: Data) -> Data {
+        guard pixels.count >= 2 else { return Data() }
+        var rgba = Data(count: (pixels.count / 2) * 4)
+        pixels.withUnsafeBytes { source in
+            rgba.withUnsafeMutableBytes { destination in
+                let sourceBytes = source.bindMemory(to: UInt8.self)
+                let destinationBytes = destination.bindMemory(to: UInt8.self)
+                var destinationOffset = 0
+                for sourceOffset in stride(from: 0, to: pixels.count - 1, by: 2) {
+                    let value = UInt16(sourceBytes[sourceOffset])
+                        | (UInt16(sourceBytes[sourceOffset + 1]) << 8)
+                    destinationBytes[destinationOffset] = UInt8((UInt32(value >> 11) * 255 + 15) / 31)
+                    destinationBytes[destinationOffset + 1] = UInt8((UInt32((value >> 5) & 0x3F) * 255 + 31) / 63)
+                    destinationBytes[destinationOffset + 2] = UInt8((UInt32(value & 0x1F) * 255 + 15) / 31)
+                    destinationBytes[destinationOffset + 3] = 255
+                    destinationOffset += 4
+                }
+            }
         }
         return rgba
     }
@@ -812,6 +1014,21 @@ final class SimulatorModel: ObservableObject {
         projectLibraryMessage = "已从测试列表移除 \(project.displayName)；原项目未更改"
     }
 
+    func saveHardwareCalibration(projectID: UUID, profile: StickS3VirtualHardwareProfile) {
+        guard let index = testProjects.firstIndex(where: { $0.id == projectID }) else { return }
+        var verified = profile
+        verified.compatibility = .verified
+        verified.detectionNote = "已由用户完成左右、上下和两颗按键校准。"
+        do {
+            try projectLibrary.saveHardwareProfile(verified)
+            testProjects[index].hardwareProfile = verified
+            persistProjectLibrary()
+            projectLibraryMessage = "\(testProjects[index].displayName)：硬件校准已按源码指纹保存"
+        } catch {
+            projectLibraryMessage = "硬件校准保存失败：\(error.localizedDescription)"
+        }
+    }
+
     private func persistProjectLibrary() {
         do {
             try projectLibrary.save(testProjects)
@@ -832,6 +1049,13 @@ final class SimulatorModel: ObservableObject {
     }
 
     func stop() {
+        // Window/app shutdown must also own the external emulator lifecycle.
+        // Relying on model deinit leaves QEMU orphaned when macOS tears down the
+        // process without releasing SwiftUI state objects first.
+        stopQEMU()
+        deviceShakeTask?.cancel()
+        deviceShakeTask = nil
+        activeShakeGesture = nil
         timer?.invalidate()
         timer = nil
         if let keyDownMonitor { NSEvent.removeMonitor(keyDownMonitor) }
@@ -848,6 +1072,7 @@ final class SimulatorModel: ObservableObject {
     func setFPS(_ value: Double) {
         fps = value
         restartTimer()
+        syncQEMUDeviceState()
     }
 
     func setSimulationRunning(_ value: Bool) {
@@ -878,15 +1103,6 @@ final class SimulatorModel: ObservableObject {
             breakout_set_sound_enabled(context, soundEnabled)
             refreshSnapshot()
             lastSoundSerial = breakout_sound_serial(context)
-        case .fruit:
-            fruit_destroy(fruitContext)
-            fruitContext = fruit_create()
-            lastFruitFrameSerial = .max
-            fruit_set_sound(fruitContext, soundEnabled)
-            let battery = Int32(max(0, min(100, Int(batteryPercent))))
-            fruit_set_power(fruitContext, battery, batteryCharging, false)
-            refreshFruitSnapshot()
-            lastFruitSoundSerial = fruitSnapshot.sound_serial
         case .hourglass:
             hourglass_destroy(hourglassContext)
             hourglassContext = hourglass_create()
@@ -938,12 +1154,59 @@ final class SimulatorModel: ObservableObject {
         eventText = "POSE \(pose.rawValue)"
     }
 
+    var canPerformDeviceShake: Bool {
+        if hasActiveQEMUFirmware {
+            return qemuControlsReady && qemuBoardCapabilities.contains(.bmi270)
+        }
+        // The built-in simulator cores always accept pose input. Their
+        // surrounding controls already handle the no-firmware empty state.
+        return true
+    }
+
+    func performDeviceShake(_ gesture: DeviceShakeGesture) {
+        guard canPerformDeviceShake, activeShakeGesture == nil else { return }
+        let origin = (x: tilt, y: tiltY, z: tiltZ)
+        activeShakeGesture = gesture
+        eventText = "\(gesture.rawValue) SHAKE"
+        deviceShakeTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let offsets: [Double] = [0.78, -0.78, 0.52, -0.36, 0]
+            for offset in offsets {
+                guard !Task.isCancelled else { break }
+                switch gesture {
+                case .horizontal:
+                    self.tilt = origin.x + offset
+                    self.tiltY = origin.y
+                    self.tiltZ = origin.z
+                case .vertical:
+                    self.tilt = origin.x
+                    self.tiltY = origin.y + offset
+                    self.tiltZ = origin.z
+                }
+                try? await Task.sleep(for: .milliseconds(120))
+            }
+            self.tilt = origin.x
+            self.tiltY = origin.y
+            self.tiltZ = origin.z
+            if !Task.isCancelled {
+                // Fruit Machine needs its cooldown plus four neutral samples
+                // before the next physical gesture is armed.
+                try? await Task.sleep(for: .milliseconds(420))
+            }
+            self.activeShakeGesture = nil
+            self.deviceShakeTask = nil
+            if !Task.isCancelled {
+                self.eventText = "\(gesture.rawValue) SHAKE COMPLETE"
+            }
+        }
+    }
+
     func setSound(_ value: Bool) {
         soundEnabled = value
         breakout_set_sound_enabled(context, value)
-        fruit_set_sound(fruitContext, value)
         defaults.set(value, forKey: "neonbrick.sound")
         if !value { deviceAudio.stop() }
+        syncQEMUDeviceState()
         eventText = value ? "SOUND ON" : "SOUND OFF"
     }
 
@@ -958,26 +1221,27 @@ final class SimulatorModel: ObservableObject {
     }
 
     private func syncVirtualPowerState() {
-        let battery = Int32(max(0, min(100, Int(batteryPercent))))
-        fruit_set_power(fruitContext, battery, batteryCharging, false)
-        if selectedProject == .fruit {
-            refreshFruitSnapshot()
-        } else if selectedProject == .codex {
+        syncQEMUDeviceState()
+        if selectedProject == .codex {
             let elapsed = UInt32(min(Double(UInt32.max),
                                      (CACurrentMediaTime() - startedAt) * 1000))
             syncCodexFirmwareState(nowMs: elapsed)
         }
     }
 
+    private func syncQEMUDeviceState() {
+        guard qemuState == .running else { return }
+        sendQEMUPacket(StickS3VirtualBoardPacketEncoder().deviceState(
+            batteryPercent: Int(batteryPercent.rounded()),
+            charging: batteryCharging,
+            soundEnabled: soundEnabled,
+            framesPerSecond: Int(fps.rounded())
+        ))
+    }
+
     func primaryShort() {
         if selectedProject == .codex {
             sendCodexEvent("front_short")
-            return
-        }
-        if selectedProject == .fruit {
-            fruit_button(fruitContext, 0, 1)
-            eventText = "FRONT SINGLE"
-            refreshFruitSnapshot()
             return
         }
         if selectedProject == .hourglass || selectedProject == .hourglassLiquid {
@@ -992,12 +1256,6 @@ final class SimulatorModel: ObservableObject {
     func primaryLong() {
         if selectedProject == .codex {
             toggleCodexRecording()
-            return
-        }
-        if selectedProject == .fruit {
-            fruit_button(fruitContext, 0, 5)
-            eventText = "FRONT LONG"
-            refreshFruitSnapshot()
             return
         }
         if selectedProject == .hourglass || selectedProject == .hourglassLiquid {
@@ -1042,19 +1300,6 @@ final class SimulatorModel: ObservableObject {
                 ensureCodexBridgeCredentialLoaded()
                 lastBridgePoll = current
                 refreshCodexBridge()
-            }
-            return
-        }
-        if selectedProject == .fruit {
-            fruit_update(fruitContext, elapsed)
-            updateFruitMotion()
-            refreshFruitSnapshot()
-            if fruitSnapshot.sound_serial != lastFruitSoundSerial {
-                lastFruitSoundSerial = fruitSnapshot.sound_serial
-                if audioPlaybackAllowed {
-                    deviceAudio.playFruit(sound: fruitSnapshot.last_sound)
-                }
-                eventText = "FRUIT SOUND \(fruitSnapshot.last_sound)"
             }
             return
         }
@@ -1147,6 +1392,10 @@ final class SimulatorModel: ObservableObject {
 
     func blueButton(clicks: Int) {
         if hasActiveQEMUFirmware, qemuBoardCapabilities.contains(.buttons) {
+            guard supports(button: .front, clicks: clicks) else {
+                eventText = "FRONT \(gestureName(clicks)) UNBOUND"
+                return
+            }
             sendQEMUPacket(StickS3VirtualBoardPacketEncoder().button(.front, clicks: clicks))
             eventText = "FRONT \(gestureName(clicks))"
             return
@@ -1157,12 +1406,6 @@ final class SimulatorModel: ObservableObject {
         }
         if selectedProject == .breakout {
             if clicks == 1 { primaryShort() } else { primaryLong() }
-            return
-        }
-        if selectedProject == .fruit {
-            fruit_button(fruitContext, 0, Int32(clicks))
-            eventText = "FRONT \(gestureName(clicks))"
-            refreshFruitSnapshot()
             return
         }
         if selectedProject == .hourglass || selectedProject == .hourglassLiquid {
@@ -1180,6 +1423,10 @@ final class SimulatorModel: ObservableObject {
 
     func grayButton(clicks: Int) {
         if hasActiveQEMUFirmware, qemuBoardCapabilities.contains(.buttons) {
+            guard supports(button: .side, clicks: clicks) else {
+                eventText = "SIDE \(gestureName(clicks)) UNBOUND"
+                return
+            }
             sendQEMUPacket(StickS3VirtualBoardPacketEncoder().button(.side, clicks: clicks))
             eventText = "SIDE \(gestureName(clicks))"
             return
@@ -1191,12 +1438,6 @@ final class SimulatorModel: ObservableObject {
         if selectedProject == .breakout {
             setSound(!soundEnabled)
             eventText = "SIDE SINGLE · SOUND \(soundEnabled ? "ON" : "OFF")"
-            return
-        }
-        if selectedProject == .fruit {
-            fruit_button(fruitContext, 1, Int32(clicks))
-            eventText = "SIDE \(gestureName(clicks))"
-            refreshFruitSnapshot()
             return
         }
         if selectedProject == .hourglass || selectedProject == .hourglassLiquid {
@@ -1213,13 +1454,13 @@ final class SimulatorModel: ObservableObject {
     }
 
     func supports(button: PhysicalButton, clicks: Int) -> Bool {
+        if hasActiveQEMUFirmware, qemuBoardCapabilities.contains(.buttons) {
+            return qemuControlsReady && (1...5).contains(clicks)
+        }
         guard hasRunnableFirmware else { return false }
         switch selectedProject {
         case .breakout:
             return button == .front ? (clicks == 1 || clicks == 5) : clicks == 1
-        case .fruit:
-            return button == .front ? (clicks == 1 || clicks == 2 || clicks == 5)
-                                    : (clicks == 1 || clicks == 2 || clicks == 4 || clicks == 5)
         case .hourglass, .hourglassLiquid:
             return button == .front ? (clicks == 1 || clicks == 2)
                                     : (clicks == 1 || clicks == 2 || clicks == 3 || clicks == 5)
@@ -1409,14 +1650,6 @@ final class SimulatorModel: ObservableObject {
         breakoutFrameRGBA = Data(rgba)
     }
 
-    private func refreshFruitSnapshot() {
-        let frameSerial = fruit_frame_serial(fruitContext)
-        guard frameSerial != lastFruitFrameSerial else { return }
-        lastFruitFrameSerial = frameSerial
-        fruitSnapshot = fruit_snapshot(fruitContext)
-        fruitFrameRGBA = rgbaData(from: fruit_framebuffer(fruitContext))
-    }
-
     private func refreshHourglassSnapshot(liquid: Bool) {
         if liquid {
             let frameSerial = hourglass_liquid_frame_serial(hourglassLiquidContext)
@@ -1495,25 +1728,8 @@ final class SimulatorModel: ObservableObject {
         return Data(rgba)
     }
 
-    private func updateFruitMotion() {
-        let x = tilt
-        let y = tiltY
-        if fruitMotionArmed {
-            if abs(x) >= 0.55 {
-                fruit_motion(fruitContext, x < 0 ? -1 : 1, 0)
-                fruitMotionArmed = false
-            } else if abs(y) >= 0.55 {
-                fruit_motion(fruitContext, 0, y < 0 ? -1 : 1)
-                fruitMotionArmed = false
-            }
-        } else if abs(x) < 0.25 && abs(y) < 0.25 {
-            fruitMotionArmed = true
-        }
-    }
-
     var currentPortraitFrameRGBA: Data {
         switch selectedProject {
-        case .fruit: return fruitFrameRGBA
         case .hourglass: return hourglassFrameRGBA
         case .hourglassLiquid: return hourglassLiquidFrameRGBA
         default: return breakoutFrameRGBA

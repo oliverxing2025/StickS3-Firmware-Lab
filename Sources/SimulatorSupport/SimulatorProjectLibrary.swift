@@ -27,6 +27,19 @@ public enum SimulatorRebuildPhase: String, Codable, Sendable {
 public struct SimulatorRebuildOutputParser: Sendable {
     public init() {}
 
+    public func fraction(for output: String) -> Double? {
+        let pattern = #"\[(\d+)/(\d+)\]"#
+        guard let expression = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let range = NSRange(output.startIndex..<output.endIndex, in: output)
+        guard let match = expression.matches(in: output, range: range).last,
+              let completedRange = Range(match.range(at: 1), in: output),
+              let totalRange = Range(match.range(at: 2), in: output),
+              let completed = Double(output[completedRange]),
+              let total = Double(output[totalRange]),
+              total > 0 else { return nil }
+        return min(max(completed / total, 0), 1)
+    }
+
     public func phase(for output: String, current: SimulatorRebuildPhase) -> SimulatorRebuildPhase {
         let text = output.lowercased()
         if text.contains("error:") || text.contains("fatalerror") || text.contains("test suite 'all tests' failed") {
@@ -53,7 +66,6 @@ public struct SimulatorRebuildOutputParser: Sendable {
 
 public enum SimulatorRuntimeID: String, Codable, CaseIterable, Sendable {
     case breakout
-    case fruit
     case hourglass
     case hourglassLiquid
     case codex
@@ -61,7 +73,6 @@ public enum SimulatorRuntimeID: String, Codable, CaseIterable, Sendable {
     public var firmwareName: String {
         switch self {
         case .breakout: return "VibeStick-Neon-Brick-Pulse"
-        case .fruit: return "VibeStick-Fruit-Machine"
         case .hourglass: return "VibeStick-Hourglass"
         case .hourglassLiquid: return "VibeStick-Hourglass-Liquid"
         case .codex: return "VibeStick-Codex"
@@ -91,7 +102,7 @@ public extension SimulatorRuntimeID {
     var displayLayout: SimulatorFirmwareDisplayLayout {
         switch self {
         case .codex: return .poseAdaptive
-        case .breakout, .fruit, .hourglass, .hourglassLiquid: return .fixedPortrait
+        case .breakout, .hourglass, .hourglassLiquid: return .fixedPortrait
         }
     }
 
@@ -99,7 +110,7 @@ public extension SimulatorRuntimeID {
     var liveDataPolicy: SimulatorFirmwareLiveDataPolicy {
         switch self {
         case .codex: return .importedProjectEnvironment
-        case .breakout, .fruit, .hourglass, .hourglassLiquid: return .none
+        case .breakout, .hourglass, .hourglassLiquid: return .none
         }
     }
 
@@ -155,6 +166,7 @@ public struct SimulatorProjectReference: Codable, Identifiable, Equatable, Senda
     public var detail: String
     public var sourceFingerprint: String?
     public var projectFormat: SimulatorProjectFormat?
+    public var hardwareProfile: StickS3VirtualHardwareProfile?
     public var addedAt: Date
     public var lastCheckedAt: Date
 
@@ -169,6 +181,7 @@ public struct SimulatorProjectReference: Codable, Identifiable, Equatable, Senda
         detail: String,
         sourceFingerprint: String? = nil,
         projectFormat: SimulatorProjectFormat? = nil,
+        hardwareProfile: StickS3VirtualHardwareProfile? = nil,
         addedAt: Date = Date(),
         lastCheckedAt: Date = Date()
     ) {
@@ -182,6 +195,7 @@ public struct SimulatorProjectReference: Codable, Identifiable, Equatable, Senda
         self.detail = detail
         self.sourceFingerprint = sourceFingerprint
         self.projectFormat = projectFormat
+        self.hardwareProfile = hardwareProfile
         self.addedAt = addedAt
         self.lastCheckedAt = lastCheckedAt
     }
@@ -209,8 +223,12 @@ public struct SimulatorFirmwareCatalogItem: Identifiable, Equatable, Sendable {
     public var compatibility: SimulatorProjectCompatibility
     public var detail: String
     public var isVisible: Bool
+    public var hardwareProfile: StickS3VirtualHardwareProfile?
 
     public var canSimulate: Bool { compatibility.canSimulate && runtimeID != nil }
+    public var requiresEmbeddedReload: Bool {
+        runtimeID != nil && compatibility == .sourceNeedsAdapter
+    }
 }
 
 public struct SimulatorFirmwareCatalogComposer: Sendable {
@@ -227,7 +245,8 @@ public struct SimulatorFirmwareCatalogComposer: Sendable {
                 projectReferenceID: project.id,
                 compatibility: project.compatibility,
                 detail: project.detail,
-                isVisible: true
+                isVisible: true,
+                hardwareProfile: project.hardwareProfile
             )
         }
         .sorted { $0.displayName.localizedStandardCompare($1.displayName) == .orderedAscending }
@@ -366,13 +385,16 @@ public struct SimulatorProjectInspector {
             )
         }
 
+        let detail = runtime == nil
+            ? "已识别 ESP-IDF StickS3 工程；点击“开始模拟”后会在私有副本中自动生成模拟接口，原项目不会被修改。"
+            : "固件源码与当前虚拟设备中的版本不同，请点“重新载入固件”。"
         return SimulatorProjectReference(
             displayName: name,
             sourcePath: projectRoot.path,
             firmwarePath: firmwareRoot.path,
             runtimeID: runtime,
             compatibility: .sourceNeedsAdapter,
-            detail: "已识别 ESP-IDF StickS3 工程；点击“开始模拟”后会在私有副本中自动生成模拟接口，原项目不会被修改。",
+            detail: detail,
             sourceFingerprint: sourceFingerprint,
             projectFormat: .espIDF
         )
@@ -504,6 +526,8 @@ public final class SimulatorProjectLibrary: @unchecked Sendable {
     public let cacheRootURL: URL
     private let fileManager: FileManager
     private let inspector: SimulatorProjectInspector
+    private let hardwareDetector = StickS3VirtualHardwareDetector()
+    private let hardwareStore: StickS3HardwareProfileStore
 
     public init(
         storageURL: URL? = nil,
@@ -524,6 +548,9 @@ public final class SimulatorProjectLibrary: @unchecked Sendable {
             .appendingPathComponent("Stick S3 Firmware Simulator", isDirectory: true)
         self.storageURL = storageURL ?? applicationSupport.appendingPathComponent("test-projects.json")
         self.cacheRootURL = cacheRootURL ?? applicationSupport.appendingPathComponent("TestCache", isDirectory: true)
+        self.hardwareStore = StickS3HardwareProfileStore(
+            storageURL: applicationSupport.appendingPathComponent("hardware-profiles.json"),
+            fileManager: fileManager)
     }
 
     public func load() -> [SimulatorProjectReference] {
@@ -545,14 +572,30 @@ public final class SimulatorProjectLibrary: @unchecked Sendable {
     }
 
     public func inspect(_ url: URL) -> SimulatorProjectReference {
-        inspector.inspect(url)
+        resolveHardware(for: inspector.inspect(url))
     }
 
     public func refresh(_ project: SimulatorProjectReference) -> SimulatorProjectReference {
-        var refreshed = inspector.inspect(URL(fileURLWithPath: project.sourcePath))
+        var refreshed = resolveHardware(for: inspector.inspect(URL(fileURLWithPath: project.sourcePath)))
         refreshed.id = project.id
         refreshed.addedAt = project.addedAt
         return refreshed
+    }
+
+    public func saveHardwareProfile(_ profile: StickS3VirtualHardwareProfile) throws {
+        try hardwareStore.save(profile)
+    }
+
+    private func resolveHardware(for project: SimulatorProjectReference) -> SimulatorProjectReference {
+        guard project.projectFormat != nil, project.firmwarePath != nil else { return project }
+        var result = project
+        var detected = hardwareDetector.detect(project: project)
+        if project.compatibility == .ready, project.runtimeID != nil {
+            detected.compatibility = .verified
+            detected.detectionNote = "当前源码指纹与应用内置验证适配器一致。"
+        }
+        result.hardwareProfile = hardwareStore.load(fingerprint: detected.sourceFingerprint) ?? detected
+        return result
     }
 
     public func merging(_ additions: [SimulatorProjectReference], into existing: [SimulatorProjectReference]) -> [SimulatorProjectReference] {

@@ -2,8 +2,8 @@
 set -euo pipefail
 
 PROJECT_DIR="${0:A:h:h}"
-OUTPUT_DIR="$PROJECT_DIR/build/third-party-sources-v0.2.0-beta"
-ARCHIVE="$PROJECT_DIR/build/StickS3-Virtual-Device-v0.2.0-beta-third-party-sources.zip"
+OUTPUT_DIR="$PROJECT_DIR/build/third-party-sources-v0.1.0-beta"
+ARCHIVE="$PROJECT_DIR/build/StickS3-Firmware-Lab-v0.1.0-beta-third-party-sources.zip"
 QEMU_TAG="esp-develop-9.2.2-20250817"
 QEMU_COMMIT="4f4148e2f68689eb8861bf9fce0b46ada9200fef"
 QEMU_SHA256="a742e58d930fe2d6a9ad408fe5971baaae8f3a310f3f3952324c13258a59f503"

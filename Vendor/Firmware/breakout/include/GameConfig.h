@@ -47,7 +47,7 @@ constexpr uint32_t PADDLE_EXTEND_MS = 9000;
 constexpr float PADDLE_EXTEND_MULTIPLIER = 1.45f;
 constexpr uint32_t LEVEL_MESSAGE_MS = 1400;
 
-// 水果机同源的 BMI270 中立基线/稳定恢复参数。
+// BMI270 中立基线与稳定恢复参数。
 constexpr uint16_t MOTION_SAMPLE_MS = 30;
 constexpr float TILT_DEAD_ZONE = 0.16f;
 constexpr float TILT_MAX_SPEED = 115.0f;

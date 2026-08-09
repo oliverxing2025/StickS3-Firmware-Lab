@@ -10,12 +10,21 @@ struct QEMUFrameView: View {
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.none)
+                    .rotationEffect(.degrees(Double(model.qemuBoardReport?.displayRotation.rawValue ?? 0)))
             } else {
                 Color.black
             }
         }
-        .aspectRatio(CGFloat(model.qemuFrameWidth) / CGFloat(model.qemuFrameHeight), contentMode: .fit)
+        .aspectRatio(displayAspectRatio, contentMode: .fit)
         .overlay(Rectangle().stroke(.white.opacity(0.12), lineWidth: 0.5))
+    }
+
+    private var displayAspectRatio: CGFloat {
+        let quarterTurn = model.qemuBoardReport?.displayRotation == .degrees90
+            || model.qemuBoardReport?.displayRotation == .degrees270
+        return quarterTurn
+            ? CGFloat(model.qemuFrameHeight) / CGFloat(model.qemuFrameWidth)
+            : CGFloat(model.qemuFrameWidth) / CGFloat(model.qemuFrameHeight)
     }
 
     private func makeImage() -> CGImage? {

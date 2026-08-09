@@ -7,7 +7,7 @@ struct StickS3SimulatorApp: App {
     @NSApplicationDelegateAdaptor(SingleInstanceAppDelegate.self) private var appDelegate
 
     var body: some Scene {
-        Window("Stick S3 Virtual Device", id: "main") {
+        Window("StickS3 Firmware Lab", id: "main") {
             SimulatorRootView()
         }
         .windowResizability(.contentSize)
@@ -37,9 +37,14 @@ private final class SingleInstanceAppDelegate: NSObject, NSApplicationDelegate {
             return
         }
         lockFileDescriptor = descriptor
+        ChildProcessRegistry.shared.configure(
+            storageURL: supportRoot.appendingPathComponent("qemu-processes.json")
+        )
+        _ = ChildProcessRegistry.shared.recoverOrphans()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        ChildProcessRegistry.shared.terminateAll()
         guard lockFileDescriptor >= 0 else { return }
         flock(lockFileDescriptor, LOCK_UN)
         Darwin.close(lockFileDescriptor)
