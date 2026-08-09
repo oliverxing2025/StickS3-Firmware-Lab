@@ -9,6 +9,10 @@ distributions.
 - VibeStick-Codex: MIT; based on VibeStick by Gary Zhang. See
   `Vendor/Licenses/VibeStick-Codex-LICENSE` and
   `Vendor/Licenses/VibeStick-Codex-NOTICE`.
+- VibeStick-Agent-Hub: MIT; based on VibeStick by Gary Zhang, with dashboard
+  design inspiration attributed in its notice. See
+  `Vendor/Licenses/VibeStick-Agent-Hub-LICENSE` and
+  `Vendor/Licenses/VibeStick-Agent-Hub-NOTICE`.
 - VibeStick-Hourglass, VibeStick-Hourglass-Liquid, and
   VibeStick-Neon-Brick-Pulse adapter snapshots: Copyright (c) 2026 Oliver
   Xing, distributed under this repository's MIT License. The Liquid project

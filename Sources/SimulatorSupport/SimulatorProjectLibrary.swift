@@ -69,6 +69,7 @@ public enum SimulatorRuntimeID: String, Codable, CaseIterable, Sendable {
     case hourglass
     case hourglassLiquid
     case codex
+    case agentHub
 
     public var firmwareName: String {
         switch self {
@@ -76,6 +77,7 @@ public enum SimulatorRuntimeID: String, Codable, CaseIterable, Sendable {
         case .hourglass: return "VibeStick-Hourglass"
         case .hourglassLiquid: return "VibeStick-Hourglass-Liquid"
         case .codex: return "VibeStick-Codex"
+        case .agentHub: return "VibeStick-Agent-Hub"
         }
     }
 
@@ -101,7 +103,7 @@ public extension SimulatorRuntimeID {
     /// 新增适配器必须在这里明确声明屏幕布局，不允许用当前帧尺寸猜测机身方向。
     var displayLayout: SimulatorFirmwareDisplayLayout {
         switch self {
-        case .codex: return .poseAdaptive
+        case .codex, .agentHub: return .poseAdaptive
         case .breakout, .hourglass, .hourglassLiquid: return .fixedPortrait
         }
     }
@@ -109,7 +111,7 @@ public extension SimulatorRuntimeID {
     /// 数据源也必须由适配器明确声明，不允许隐式读取开发电脑状态。
     var liveDataPolicy: SimulatorFirmwareLiveDataPolicy {
         switch self {
-        case .codex: return .importedProjectEnvironment
+        case .codex, .agentHub: return .importedProjectEnvironment
         case .breakout, .hourglass, .hourglassLiquid: return .none
         }
     }

@@ -98,16 +98,27 @@ let package = Package(
                 ("CODEX_FIRMWARE_ASSETS_HEADER", "generated/vibe_stick_ui_assets.h"),
             ])
         ),
+        .target(
+            name: "AgentHubCore",
+            dependencies: ["LVGLHost"],
+            path: "Sources/AgentHubCore",
+            publicHeadersPath: "include",
+            cSettings: definitions(runtime: "agentHub", files: [
+                ("AGENT_HUB_FIRMWARE_MAIN", "src/main.c"),
+                ("AGENT_HUB_FIRMWARE_ASSETS", "generated/vibe_stick_ui_assets.c"),
+                ("AGENT_HUB_FIRMWARE_ASSETS_HEADER", "generated/vibe_stick_ui_assets.h"),
+            ])
+        ),
         .executableTarget(
             name: "StickS3Simulator",
-            dependencies: ["SimulatorSupport", "BreakoutCore", "HourglassCore", "HourglassLiquidCore", "CodexCore"],
+            dependencies: ["SimulatorSupport", "BreakoutCore", "HourglassCore", "HourglassLiquidCore", "CodexCore", "AgentHubCore"],
             path: "Sources/StickS3Simulator",
             exclude: ["Resources"],
             swiftSettings: [.unsafeFlags(["-strict-concurrency=minimal"])]
         ),
         .testTarget(
             name: "BreakoutCoreTests",
-            dependencies: ["SimulatorSupport", "BreakoutCore", "HourglassCore", "HourglassLiquidCore", "CodexCore", "StickS3Simulator"],
+            dependencies: ["SimulatorSupport", "BreakoutCore", "HourglassCore", "HourglassLiquidCore", "CodexCore", "AgentHubCore", "StickS3Simulator"],
             path: "Tests/BreakoutCoreTests"
         ),
     ],

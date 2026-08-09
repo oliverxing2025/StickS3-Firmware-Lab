@@ -53,7 +53,7 @@ strip -S -x "$STAGED_APP/Contents/MacOS/StickS3Simulator"
 "$PROJECT_DIR/scripts/bundle-qemu.sh" "$STAGED_APP/Contents/Resources/Emulation"
 
 FINGERPRINT_TOOL="$SWIFTPM_SCRATCH_PATH/release/FirmwareFingerprintTool"
-for runtime in breakout hourglass hourglassLiquid codex; do
+for runtime in breakout hourglass hourglassLiquid codex agentHub; do
     vendor_runtime="$runtime"
     [[ "$runtime" == "hourglassLiquid" ]] && vendor_runtime="liquid"
     firmware_root="$PROJECT_DIR/Vendor/Firmware/$vendor_runtime"

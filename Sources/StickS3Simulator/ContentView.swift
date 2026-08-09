@@ -382,10 +382,10 @@ struct ContentView: View {
                 .frame(width: 337.5, height: 600)
             } else {
                 Group {
-                    if model.selectedProject != .codex {
-                        StickScreenView(model: model).frame(width: 337.5, height: 600)
-                    } else {
+                    if model.selectedProject == .codex || model.selectedProject == .agentHub {
                         CodexFirmwareScreenView(model: model).frame(width: 337.5, height: 600)
+                    } else {
+                        StickScreenView(model: model).frame(width: 337.5, height: 600)
                     }
                 }
                 .colorMultiply(Color(white: model.screenBrightnessPercent / 100))
@@ -526,7 +526,7 @@ struct ContentView: View {
     }
 
     private var orientationHint: String {
-        if model.selectedProject == .codex {
+        if model.selectedProject == .codex || model.selectedProject == .agentHub {
             return t("135 × 240 正放 · 240 × 135 横放自适应固件",
                      "135 × 240 upright · 240 × 135 landscape adaptive")
         }

@@ -24,6 +24,14 @@ struct CodexBridgeClient {
         ])
     }
 
+    func selectProvider(_ providerID: String) async throws -> [String: Any] {
+        try await request(path: "/event", method: "POST", json: [
+            "event": "provider_select",
+            "provider_id": providerID,
+            "source": "sticks3-simulator",
+        ])
+    }
+
     func refreshQuota() async throws -> [String: Any] {
         try await request(path: "/quota/refresh", method: "POST", json: [:])
     }

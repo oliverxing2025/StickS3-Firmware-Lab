@@ -7,8 +7,9 @@ so a clean checkout builds without sibling repositories. Imported project
 source is read-only and is compiled only after the user chooses Reload
 Firmware.
 
-VibeStick-Codex contains work based on VibeStick by Gary Zhang. Its original
-attribution and license are preserved in Vendor/Licenses/.
+VibeStick-Codex and VibeStick-Agent-Hub contain work based on VibeStick by
+Gary Zhang. Their original attribution and licenses are preserved in
+Vendor/Licenses/.
 
 LVGL and generated Montserrat font data are redistributed under their
 respective licenses in Vendor/Licenses/. No Arial font binary is distributed.

@@ -14,7 +14,7 @@ public enum SimulatorSourceFingerprintError: Error, LocalizedError {
 public enum SimulatorSourceFingerprint {
     public static func relativeFiles(for runtime: SimulatorRuntimeID) -> [String] {
         switch runtime {
-        case .codex:
+        case .codex, .agentHub:
             return ["generated/vibe_stick_ui_assets.c", "generated/vibe_stick_ui_assets.h", "src/main.c"]
         case .hourglass, .hourglassLiquid:
             return ["include/hourglass_physics.h", "src/hourglass_physics.c", "src/main.c"]

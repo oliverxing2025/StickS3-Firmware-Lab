@@ -12,8 +12,8 @@ struct CodexFirmwareScreenView: View {
                 Image(decorative: image, scale: 1)
                     .resizable()
                     .interpolation(.none)
-                    .frame(width: CGFloat(model.codexFrameWidth) * 2.5,
-                           height: CGFloat(model.codexFrameHeight) * 2.5)
+                    .frame(width: CGFloat(model.adaptiveFrameWidth) * 2.5,
+                           height: CGFloat(model.adaptiveFrameHeight) * 2.5)
                     .rotationEffect(.degrees(counterRotation))
             }
         }
@@ -31,10 +31,10 @@ struct CodexFirmwareScreenView: View {
     }
 
     private func makeImage() -> CGImage? {
-        let width = model.codexFrameWidth
-        let height = model.codexFrameHeight
-        guard model.codexFrameRGBA.count == width * height * 4,
-              let provider = CGDataProvider(data: model.codexFrameRGBA as CFData) else {
+        let width = model.adaptiveFrameWidth
+        let height = model.adaptiveFrameHeight
+        guard model.adaptiveFrameRGBA.count == width * height * 4,
+              let provider = CGDataProvider(data: model.adaptiveFrameRGBA as CFData) else {
             return nil
         }
         return CGImage(

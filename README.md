@@ -7,7 +7,7 @@
   </p>
   <p>
     <a href="#overview">Overview</a> ·
-    <a href="#v010-beta-public-test">v0.1.0 Beta</a> ·
+    <a href="#v020-beta-public-test">v0.2.0 Beta</a> ·
     <a href="#sticks3-source-project-compatibility">Compatibility</a> ·
     <a href="#complete-controls">Controls</a> ·
     <a href="#installation">Install</a> ·
@@ -19,23 +19,28 @@
     <img alt="Platform: macOS 26+" src="https://img.shields.io/badge/platform-macOS%2026%2B-111111">
     <img alt="Architecture: Apple Silicon" src="https://img.shields.io/badge/architecture-Apple%20Silicon-5A5A5A">
     <img alt="Swift: 6.2+" src="https://img.shields.io/badge/Swift-6.2%2B-F05138">
-    <img alt="Version: 0.1.0 Beta" src="https://img.shields.io/badge/version-0.1.0--beta-2F80ED">
+    <img alt="Version: 0.2.0 Beta" src="https://img.shields.io/badge/version-0.2.0--beta-2F80ED">
     <img alt="Mode: local first" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
 </div>
 
-## v0.1.0 Beta public test
+## v0.2.0 Beta public test
 
 **Release date:** August 9, 2026
 
 The source code is open for public beta testing under the MIT License. Download
 the current macOS build and its checksum from the
-[v0.1.0 Beta release](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.1.0-beta),
+[v0.2.0 Beta release](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.2.0-beta),
 or build it locally from this tag. Please report reproducible issues through
 [GitHub Issues](https://github.com/oliverxing2025/StickS3-Firmware-Lab/issues).
 
-- **Source-project simulation:** ESP-IDF, PlatformIO, and Arduino source
-  projects have completed end-to-end build, display, button, and BMI270 tests.
+- **Agent Hub runtime:** run the VibeStick-Agent-Hub startup selector natively,
+  enter Codex, Claude Code, or Kimi, and cycle providers with a side-button
+  triple click.
+- **Local Codex data:** discover an installed loopback VibeStick Bridge and use
+  its local configuration without displaying or copying the credential.
+- **Truthful provider state:** Codex can show live bridge data; Claude Code and
+  Kimi remain visibly offline until their own bridge integrations are available.
 - **Whole-device pose simulation:** portrait, left 90°, right 90°, and upside
   down rotate the body, display, and physical buttons together.
 - **Fixed desktop viewport:** the application does not scroll horizontally or
@@ -63,6 +68,7 @@ and interacting with StickS3 firmware projects in a physical-device shell.
 | **03** | Hardware detection and calibration | Detects common display, button, and BMI270 mappings; stores source-bound calibration locally when needed. |
 | **04** | Safe reload and build cache | Rebuilds changed source in a private copy and reuses only a matching cached result. |
 | **05** | Local-first data | Keeps imported paths, settings, and test data on the Mac rather than uploading them to a service. |
+| **06** | Agent Hub | Reproduces the provider selector and side-button triple-click switching from VibeStick-Agent-Hub. |
 
 > [!NOTE]
 > This application complements real-device testing. Display color, physical
@@ -154,13 +160,13 @@ loopback bridge does not provide general network access to simulated firmware.
 
 ### Public beta build
 
-Download `StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg` and its `.sha256`
+Download `StickS3-Firmware-Lab-v0.2.0-beta-macOS-arm64.dmg` and its `.sha256`
 file from the
-[v0.1.0 Beta release](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.1.0-beta).
+[v0.2.0 Beta release](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.2.0-beta).
 Verify the disk image before opening it:
 
 ```sh
-shasum -a 256 -c StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg.sha256
+shasum -a 256 -c StickS3-Firmware-Lab-v0.2.0-beta-macOS-arm64.dmg.sha256
 ```
 
 Open the DMG, then drag `StickS3 固件实验台.app` onto the `Applications`
@@ -214,7 +220,7 @@ Imported source directories are read-only references. Removing an entry from
 the catalog does not delete or modify the original project.
 
 <div align="center">
-  <img src="assets/screenshots/running-firmware.png" alt="Latest v0.1.0 Beta interface running a firmware project" width="1000">
+  <img src="assets/screenshots/running-firmware.png" alt="StickS3 Firmware Lab running a firmware project" width="1000">
 </div>
 
 > [!WARNING]
@@ -266,7 +272,7 @@ unbound; the simulator does not invent a behavior.
 - The application checks the project structure and reports whether it can run.
 - Common hardware mappings are detected from source semantics rather than the
   project name. Ambiguous mappings are shown for local calibration.
-- Saved calibration is bound to the source fingerprint; a source change
+- Saved calibration is bound to the exact source version; a source change
   triggers detection again instead of silently reusing stale mappings.
 - After source changes to firmware with an embedded adapter, use **Reload
   firmware** to rebuild the app from the latest source. Firmware Manager does

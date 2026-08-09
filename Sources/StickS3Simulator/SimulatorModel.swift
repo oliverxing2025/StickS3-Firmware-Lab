@@ -1,4 +1,5 @@
 import AppKit
+import AgentHubCore
 import BreakoutCore
 import CodexCore
 import Foundation
@@ -11,6 +12,7 @@ enum VirtualProject: String, CaseIterable, Identifiable {
     case hourglass = "沙漏"
     case hourglassLiquid = "液态沙漏"
     case codex = "VibeStick-Codex"
+    case agentHub = "VibeStick-Agent-Hub"
     var id: String { rawValue }
 
     var runtimeID: SimulatorRuntimeID {
@@ -19,6 +21,7 @@ enum VirtualProject: String, CaseIterable, Identifiable {
         case .hourglass: return .hourglass
         case .hourglassLiquid: return .hourglassLiquid
         case .codex: return .codex
+        case .agentHub: return .agentHub
         }
     }
 
@@ -28,13 +31,14 @@ enum VirtualProject: String, CaseIterable, Identifiable {
         case .hourglass: return "VibeStick-Hourglass"
         case .hourglassLiquid: return "VibeStick-Hourglass-Liquid"
         case .codex: return "VibeStick-Codex"
+        case .agentHub: return "VibeStick-Agent-Hub"
         }
     }
 
     var orientationHint: String {
         switch self {
         case .breakout, .hourglass, .hourglassLiquid: return "135 × 240 竖屏固件"
-        case .codex: return "135 × 240 正放 · 240 × 135 横放自适应固件"
+        case .codex, .agentHub: return "135 × 240 正放 · 240 × 135 横放自适应固件"
         }
     }
 
@@ -48,6 +52,7 @@ enum VirtualProject: String, CaseIterable, Identifiable {
         case .hourglass: self = .hourglass
         case .hourglassLiquid: self = .hourglassLiquid
         case .codex: self = .codex
+        case .agentHub: self = .agentHub
         }
     }
 }
@@ -125,6 +130,10 @@ struct BrickViewData: Identifiable {
 final class SimulatorModel: ObservableObject {
     static let screenWidth: Int32 = 135
     static let screenHeight: Int32 = 240
+    static let agentHubProviderIDs = ["codex", "claude-code", "kimi-code"]
+    static func agentHubUsesCodexLiveData(providerIndex: Int32) -> Bool {
+        providerIndex == 0
+    }
 
     @Published var snapshot = BreakoutSnapshot()
     @Published var ball = BreakoutBallSnapshot()
@@ -136,6 +145,7 @@ final class SimulatorModel: ObservableObject {
     @Published var hourglassSnapshot = HourglassSnapshot()
     @Published var hourglassLiquidSnapshot = HourglassLiquidSnapshot()
     @Published var codexFrameRGBA = Data()
+    @Published var agentHubFrameRGBA = Data()
     @Published var tilt: Double = 0 { didSet { sendQEMUMotionIfReady() } }
     @Published var tiltY: Double = 0 { didSet { sendQEMUMotionIfReady() } }
     @Published var tiltZ: Double = 1 { didSet { sendQEMUMotionIfReady() } }
@@ -149,6 +159,10 @@ final class SimulatorModel: ObservableObject {
     @Published var selectedProject: VirtualProject = .breakout {
         didSet {
             defaults.set(selectedProject.rawValue, forKey: "simulator.firmware")
+            if oldValue.runtimeID != selectedProject.runtimeID {
+                resetCodexBridgeCredential()
+                lastBridgePoll = 0
+            }
             refreshResourceMetrics()
             syncFirmwareDisplayForPose()
         }
@@ -160,6 +174,8 @@ final class SimulatorModel: ObservableObject {
     @Published var bridgeToken = ""
     @Published private(set) var codexFrameWidth = 240
     @Published private(set) var codexFrameHeight = 135
+    @Published private(set) var agentHubFrameWidth = 135
+    @Published private(set) var agentHubFrameHeight = 240
     @Published private(set) var testProjects: [SimulatorProjectReference] = []
     @Published var projectLibraryMessage = ""
     @Published private(set) var isRebuilding = false
@@ -186,6 +202,7 @@ final class SimulatorModel: ObservableObject {
     private var hourglassContext: UnsafeMutableRawPointer?
     private var hourglassLiquidContext: UnsafeMutableRawPointer?
     private var codexFirmwareContext: UnsafeMutableRawPointer?
+    private var agentHubFirmwareContext: UnsafeMutableRawPointer?
     private var timer: Timer?
     private var lastTick = CACurrentMediaTime()
     private var startedAt = CACurrentMediaTime()
@@ -195,6 +212,7 @@ final class SimulatorModel: ObservableObject {
     private var lastHourglassFrameSerial = UInt32.max
     private var lastLiquidFrameSerial = UInt32.max
     private var lastCodexFrameSerial = UInt32.max
+    private var lastAgentHubFrameSerial = UInt32.max
     private var keyDownMonitor: Any?
     private var keyUpMonitor: Any?
     private var lastBridgePoll = 0.0
@@ -282,6 +300,7 @@ final class SimulatorModel: ObservableObject {
         hourglassContext = hourglass_create()
         hourglassLiquidContext = hourglass_liquid_create()
         codexFirmwareContext = codex_firmware_create()
+        agentHubFirmwareContext = agent_hub_firmware_create()
         syncFirmwareDisplayForPose()
         let high = UInt32(defaults.integer(forKey: "neonbrick.high"))
         let unlocked = UInt8(max(1, defaults.integer(forKey: "neonbrick.unlock")))
@@ -307,6 +326,7 @@ final class SimulatorModel: ObservableObject {
         hourglass_destroy(hourglassContext)
         hourglass_liquid_destroy(hourglassLiquidContext)
         codex_firmware_destroy(codexFirmwareContext)
+        agent_hub_firmware_destroy(agentHubFirmwareContext)
         stopQEMU()
     }
 
@@ -447,7 +467,9 @@ final class SimulatorModel: ObservableObject {
             existing.removeAll { $0.runtimeID == runtime && $0.sourcePath != project.sourcePath }
         }
         testProjects = projectLibrary.merging([project], into: existing)
-        if project.runtimeID == .codex { resetCodexBridgeCredential() }
+        if project.runtimeID == .codex || project.runtimeID == .agentHub {
+            resetCodexBridgeCredential()
+        }
         persistProjectLibrary()
         if let runtime = project.runtimeID, let selected = VirtualProject(runtimeID: runtime) {
             selectedProject = selected
@@ -1122,6 +1144,12 @@ final class SimulatorModel: ObservableObject {
             syncCodexFirmwareState(nowMs: 0)
             lastCodexStatus = codex.status
             lastCodexWaitingTasks = codex.waitingTasks
+        case .agentHub:
+            agent_hub_firmware_destroy(agentHubFirmwareContext)
+            agentHubFirmwareContext = agent_hub_firmware_create()
+            lastAgentHubFrameSerial = .max
+            syncFirmwareDisplayForPose()
+            syncAgentHubFirmwareState(nowMs: 0)
         }
 
         eventText = "FIRMWARE RESTARTED"
@@ -1222,10 +1250,14 @@ final class SimulatorModel: ObservableObject {
 
     private func syncVirtualPowerState() {
         syncQEMUDeviceState()
-        if selectedProject == .codex {
+        if selectedProject == .codex || selectedProject == .agentHub {
             let elapsed = UInt32(min(Double(UInt32.max),
                                      (CACurrentMediaTime() - startedAt) * 1000))
-            syncCodexFirmwareState(nowMs: elapsed)
+            if selectedProject == .codex {
+                syncCodexFirmwareState(nowMs: elapsed)
+            } else {
+                syncAgentHubFirmwareState(nowMs: elapsed)
+            }
         }
     }
 
@@ -1240,6 +1272,10 @@ final class SimulatorModel: ObservableObject {
     }
 
     func primaryShort() {
+        if selectedProject == .agentHub {
+            sendAgentHubButton(side: false, clicks: 1)
+            return
+        }
         if selectedProject == .codex {
             sendCodexEvent("front_short")
             return
@@ -1254,6 +1290,10 @@ final class SimulatorModel: ObservableObject {
     }
 
     func primaryLong() {
+        if selectedProject == .agentHub {
+            eventText = "FRONT LONG UNBOUND"
+            return
+        }
         if selectedProject == .codex {
             toggleCodexRecording()
             return
@@ -1292,15 +1332,16 @@ final class SimulatorModel: ObservableObject {
         let delta = Float(min(0.05, current - lastTick))
         lastTick = current
         let elapsed = UInt32(min(Double(UInt32.max), (current - startedAt) * 1000))
+        refreshLiveBridgeIfNeeded(now: current)
+        if selectedProject == .agentHub {
+            updateCodexClock(current)
+            syncAgentHubFirmwareState(nowMs: elapsed)
+            return
+        }
         if selectedProject == .codex {
             updateCodexClock(current)
             syncCodexFirmwareState(nowMs: elapsed)
             handleCodexAudioEvents()
-            if codexUsesBridge && current - lastBridgePoll >= 2.0 {
-                ensureCodexBridgeCredentialLoaded()
-                lastBridgePoll = current
-                refreshCodexBridge()
-            }
             return
         }
         if selectedProject == .hourglass {
@@ -1349,6 +1390,15 @@ final class SimulatorModel: ObservableObject {
             eventText = "WAIT SOUND"
         }
         lastCodexWaitingTasks = codex.waitingTasks
+    }
+
+    private func refreshLiveBridgeIfNeeded(now: Double) {
+        guard selectedProject.runtimeID.liveDataPolicy == .importedProjectEnvironment,
+              codexUsesBridge,
+              now - lastBridgePoll >= 2.0 else { return }
+        ensureCodexBridgeCredentialLoaded()
+        lastBridgePoll = now
+        refreshCodexBridge()
     }
 
     func refreshCodexBridge() {
@@ -1412,6 +1462,10 @@ final class SimulatorModel: ObservableObject {
             sendHourglassButton(button: 0, clicks: clicks)
             return
         }
+        if selectedProject == .agentHub {
+            sendAgentHubButton(side: false, clicks: clicks)
+            return
+        }
         switch clicks {
         case 1: sendCodexEvent("front_short")
         case 2: refreshCodexQuota()
@@ -1444,6 +1498,10 @@ final class SimulatorModel: ObservableObject {
             sendHourglassButton(button: 1, clicks: clicks)
             return
         }
+        if selectedProject == .agentHub {
+            sendAgentHubButton(side: true, clicks: clicks)
+            return
+        }
         switch clicks {
         case 1: sendCodexEvent("side_short")
         case 2: sendCodexEvent("side_double")
@@ -1467,6 +1525,8 @@ final class SimulatorModel: ObservableObject {
         case .codex:
             return button == .front ? (clicks == 1 || clicks == 2 || clicks == 5)
                                     : (clicks == 1 || clicks == 2 || clicks == 3 || clicks == 5)
+        case .agentHub:
+            return button == .front ? clicks == 1 : (clicks == 1 || clicks == 3)
         }
     }
 
@@ -1519,7 +1579,7 @@ final class SimulatorModel: ObservableObject {
             bridgeToken = ""
             return
         }
-        let projectRoot = testProjects.first(where: { $0.runtimeID == .codex })?.sourcePath
+        let projectRoot = selectedSourceProject?.sourcePath
         bridgeToken = BridgeCredentialStore.loadToken(projectRoot: projectRoot)
     }
 
@@ -1531,14 +1591,22 @@ final class SimulatorModel: ObservableObject {
     private func syncFirmwareDisplayForPose() {
         guard selectedProject.runtimeID.displayLayout == .poseAdaptive else { return }
         // 自适应适配器统一从这个入口接收姿态；新固件不得在视图中猜测方向。
-        guard selectedProject == .codex, codexFirmwareContext != nil else { return }
         let landscape = devicePose.isQuarterTurn
-        codex_firmware_set_orientation(
-            codexFirmwareContext,
-            landscape,
-            landscape && devicePose == .left90
-        )
-        refreshCodexFramebuffer()
+        if selectedProject == .codex, codexFirmwareContext != nil {
+            codex_firmware_set_orientation(
+                codexFirmwareContext,
+                landscape,
+                landscape && devicePose == .left90
+            )
+            refreshCodexFramebuffer()
+        } else if selectedProject == .agentHub, agentHubFirmwareContext != nil {
+            agent_hub_firmware_set_orientation(
+                agentHubFirmwareContext,
+                landscape,
+                landscape && devicePose == .left90
+            )
+            refreshAgentHubFramebuffer()
+        }
     }
 
     private func bridgeFailed(_ message: String) {
@@ -1700,6 +1768,94 @@ final class SimulatorModel: ObservableObject {
         codexFrameWidth = Int(codex_firmware_frame_width(codexFirmwareContext))
         codexFrameHeight = Int(codex_firmware_frame_height(codexFirmwareContext))
         codexFrameRGBA = rgbaData(from: codex_firmware_framebuffer(codexFirmwareContext))
+    }
+
+    private func syncAgentHubFirmwareState(nowMs: UInt32) {
+        let battery = Int32(max(0, min(100, Int(batteryPercent))))
+        let usesCodexData = Self.agentHubUsesCodexLiveData(
+            providerIndex: agent_hub_firmware_active_provider(agentHubFirmwareContext))
+        let statusText = usesCodexData ? codex.status : "OFFLINE"
+        statusText.withCString { status in
+            codex.time.withCString { time in
+                codex.date.withCString { date in
+                    codex.weekday.withCString { weekday in
+                        agent_hub_firmware_set_state(
+                            agentHubFirmwareContext, status, time, date, weekday,
+                            battery, batteryCharging, false,
+                            usesCodexData ? Int32(codex.quota5h) : 0,
+                            usesCodexData ? Int32(codex.reset5hMinutes) : 0,
+                            usesCodexData ? Int32(codex.quota7d) : 0,
+                            usesCodexData ? Int32(codex.reset7dMinutes) : 0,
+                            usesCodexData ? codex.monthCost : 0,
+                            usesCodexData ? Int64(codex.monthTokens) : 0,
+                            usesCodexData ? Int32(codex.todayUsedPercent) : 0,
+                            usesCodexData ? Int64(codex.todayTokens) : 0,
+                            usesCodexData ? Int32(codex.runningTasks) : 0,
+                            usesCodexData ? Int32(codex.waitingTasks) : 0,
+                            usesCodexData ? Int32(codex.finishedTasks) : 0,
+                            usesCodexData && codex.quota5hValid,
+                            usesCodexData && codex.reset5hValid,
+                            usesCodexData && codex.quota7dValid,
+                            usesCodexData && codex.reset7dValid,
+                            usesCodexData && codex.monthCostValid,
+                            usesCodexData && codex.monthTokensValid,
+                            usesCodexData && codex.todayUsedPercentValid,
+                            usesCodexData && codex.todayTokensValid)
+                    }
+                }
+            }
+        }
+        agent_hub_firmware_update(agentHubFirmwareContext, nowMs)
+        refreshAgentHubFramebuffer()
+    }
+
+    private func refreshAgentHubFramebuffer() {
+        let frameSerial = agent_hub_firmware_frame_serial(agentHubFirmwareContext)
+        guard frameSerial != lastAgentHubFrameSerial else { return }
+        lastAgentHubFrameSerial = frameSerial
+        agentHubFrameWidth = Int(agent_hub_firmware_frame_width(agentHubFirmwareContext))
+        agentHubFrameHeight = Int(agent_hub_firmware_frame_height(agentHubFirmwareContext))
+        agentHubFrameRGBA = rgbaData(from: agent_hub_firmware_framebuffer(agentHubFirmwareContext))
+    }
+
+    private func sendAgentHubButton(side: Bool, clicks: Int) {
+        let wasSelectorActive = agent_hub_firmware_selector_active(agentHubFirmwareContext)
+        agent_hub_firmware_button(agentHubFirmwareContext, side, Int32(clicks))
+        refreshAgentHubFramebuffer()
+        eventText = "\(side ? "SIDE" : "FRONT") \(gestureName(clicks))"
+        let selectorActive = agent_hub_firmware_selector_active(agentHubFirmwareContext)
+        let enteredProvider = wasSelectorActive && !selectorActive
+        let switchedProvider = !selectorActive && side && clicks == 3
+        guard codexUsesBridge, enteredProvider || switchedProvider else { return }
+        ensureCodexBridgeCredentialLoaded()
+        let index = Int(agent_hub_firmware_active_provider(agentHubFirmwareContext))
+        guard Self.agentHubProviderIDs.indices.contains(index) else { return }
+        let providerID = Self.agentHubProviderIDs[index]
+        Task {
+            do {
+                let state = try await codexClient.selectProvider(providerID)
+                if state["active_provider"] as? String == providerID {
+                    applyBridgeJSON(state)
+                    eventText = "BRIDGE PROVIDER \(providerID.uppercased())"
+                } else {
+                    eventText = "BRIDGE PROVIDER UNSUPPORTED"
+                }
+            } catch {
+                bridgeFailed("BRIDGE PROVIDER FAILED")
+            }
+        }
+    }
+
+    var adaptiveFrameRGBA: Data {
+        selectedProject == .agentHub ? agentHubFrameRGBA : codexFrameRGBA
+    }
+
+    var adaptiveFrameWidth: Int {
+        selectedProject == .agentHub ? agentHubFrameWidth : codexFrameWidth
+    }
+
+    var adaptiveFrameHeight: Int {
+        selectedProject == .agentHub ? agentHubFrameHeight : codexFrameHeight
     }
 
     private func sendHourglassButton(button: Int32, clicks: Int) {

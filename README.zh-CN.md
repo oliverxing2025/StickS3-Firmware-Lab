@@ -7,7 +7,7 @@
   </p>
   <p>
     <a href="#项目概览">项目概览</a> ·
-    <a href="#v010-beta-公开测试">v0.1.0 Beta</a> ·
+    <a href="#v020-beta-公开测试">v0.2.0 Beta</a> ·
     <a href="#sticks3-源码工程兼容">固件兼容</a> ·
     <a href="#完整控制">完整控制</a> ·
     <a href="#安装">安装</a> ·
@@ -19,21 +19,23 @@
     <img alt="平台：macOS 26+" src="https://img.shields.io/badge/platform-macOS%2026%2B-111111">
     <img alt="架构：Apple Silicon" src="https://img.shields.io/badge/architecture-Apple%20Silicon-5A5A5A">
     <img alt="Swift：6.2+" src="https://img.shields.io/badge/Swift-6.2%2B-F05138">
-    <img alt="版本：0.1.0 Beta" src="https://img.shields.io/badge/version-0.1.0--beta-2F80ED">
+    <img alt="版本：0.2.0 Beta" src="https://img.shields.io/badge/version-0.2.0--beta-2F80ED">
     <img alt="模式：本地优先" src="https://img.shields.io/badge/mode-local--first-2E8B57">
   </p>
 </div>
 
-## v0.1.0 Beta 公开测试
+## v0.2.0 Beta 公开测试
 
 **发布日期：**2026 年 8 月 9 日
 
 源代码已按 MIT 许可证开放公开测试。可从
-[v0.1.0 Beta 发布页](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.1.0-beta)
+[v0.2.0 Beta 发布页](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.2.0-beta)
 下载当前 macOS 版本及校验文件，也可从该标签自行构建。如发现可复现问题，
 请通过 [GitHub Issues](https://github.com/oliverxing2025/StickS3-Firmware-Lab/issues) 反馈。
 
-- **源码工程模拟：**已完成 ESP-IDF、PlatformIO 和 Arduino 源码工程的构建、画面、按键与 BMI270 端到端验证。
+- **Agent Hub 运行时：**原生运行 VibeStick-Agent-Hub 启动选择界面，可进入 Codex、Claude Code 或 Kimi，并通过侧键三连击顺序切换。
+- **Codex 本地数据：**自动发现已安装的本机回环 VibeStick Bridge，使用其本地配置，但不显示或复制凭据。
+- **真实反映接入状态：**Codex 可显示 Bridge 实时数据；Claude Code 与 Kimi 在各自 Bridge 接入前明确显示离线，不挪用 Codex 数据。
 - **整机姿态模拟：**正放、左转 90°、右转 90°、反放会同时旋转机身、屏幕和实体按键。
 - **固定桌面视口：**页面不能上下或左右滚动，完整控制区始终保持在同一个窗口内。
 - **安全项目重载：**固件源码变化后可以重新载入，不修改原项目文件。
@@ -56,6 +58,7 @@ StickS3 固件实验台是用于导入、运行和操作 StickS3 固件项目的
 | **03** | 硬件识别与校准 | 识别常见屏幕、按键与 BMI270 映射；需要时在本机保存与源码绑定的校准 |
 | **04** | 安全重载与构建缓存 | 在私有副本重建变更的源码，只复用完全匹配的缓存 |
 | **05** | 本地数据优先 | 导入路径、设置和测试数据保留在 Mac 本机，不上传到网络服务 |
+| **06** | Agent Hub | 复现 VibeStick-Agent-Hub 的启动选择和侧键三连击切换逻辑 |
 
 > [!NOTE]
 > 本应用用于补充真机测试。屏幕色差、真实传感器噪声、ES8311 响应、
@@ -131,12 +134,12 @@ ESP-IDF 对整个应用而言是可选扩展，但导入 ESP-IDF 工程时必须
 
 ### 公开测试版
 
-从 [v0.1.0 Beta 发布页](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.1.0-beta)
-下载 `StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg` 及对应的
+从 [v0.2.0 Beta 发布页](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.2.0-beta)
+下载 `StickS3-Firmware-Lab-v0.2.0-beta-macOS-arm64.dmg` 及对应的
 `.sha256` 文件，然后执行：
 
 ```sh
-shasum -a 256 -c StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg.sha256
+shasum -a 256 -c StickS3-Firmware-Lab-v0.2.0-beta-macOS-arm64.dmg.sha256
 ```
 
 打开 DMG，将 `StickS3 固件实验台.app` 拖到 `Applications`
@@ -181,7 +184,7 @@ shasum -a 256 -c StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg.sha256
 导入目录只作为只读引用。把条目从目录中删除不会删除或修改原项目。
 
 <div align="center">
-  <img src="assets/screenshots/running-firmware.png" alt="v0.1.0 Beta 最新界面正在运行固件项目" width="1000">
+  <img src="assets/screenshots/running-firmware.png" alt="StickS3 固件实验台正在运行固件项目" width="1000">
 </div>
 
 > [!WARNING]

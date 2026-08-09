@@ -1,3 +1,4 @@
+import AgentHubCore
 import BreakoutCore
 import CodexCore
 import Foundation
@@ -1089,12 +1090,81 @@ final class BreakoutCoreTests: XCTestCase {
         }
         XCTAssertEqual(SimulatorRuntimeID.codex.displayLayout, .poseAdaptive)
         XCTAssertEqual(SimulatorRuntimeID.codex.liveDataPolicy, .importedProjectEnvironment)
+        XCTAssertEqual(SimulatorRuntimeID.agentHub.displayLayout, .poseAdaptive)
+        XCTAssertEqual(SimulatorRuntimeID.agentHub.liveDataPolicy, .importedProjectEnvironment)
         XCTAssertTrue(SimulatorRuntimeID.allCases
-            .filter { $0 != .codex }
+            .filter { $0 != .codex && $0 != .agentHub }
             .allSatisfy { $0.displayLayout == .fixedPortrait })
         XCTAssertTrue(SimulatorRuntimeID.allCases
-            .filter { $0 != .codex }
+            .filter { $0 != .codex && $0 != .agentHub }
             .allSatisfy { $0.liveDataPolicy == .none })
+    }
+
+    func testAgentHubSelectorAndProviderTripleClickUseFirmwareFrames() {
+        let context = agent_hub_firmware_create()
+        XCTAssertNotNil(context)
+        defer { agent_hub_firmware_destroy(context) }
+        XCTAssertEqual(agent_hub_firmware_frame_width(context), 135)
+        XCTAssertEqual(agent_hub_firmware_frame_height(context), 240)
+        XCTAssertTrue(agent_hub_firmware_selector_active(context))
+        XCTAssertEqual(agent_hub_firmware_active_provider(context), 0)
+
+        guard let initialPixels = agent_hub_firmware_framebuffer(context) else {
+            return XCTFail("Agent Hub selector did not return a framebuffer")
+        }
+        let initial = checksum(initialPixels)
+        agent_hub_firmware_button(context, true, 1)
+        guard let selectedPixels = agent_hub_firmware_framebuffer(context) else {
+            return XCTFail("Agent Hub selector did not update its framebuffer")
+        }
+        XCTAssertNotEqual(checksum(selectedPixels), initial)
+        XCTAssertEqual(agent_hub_firmware_active_provider(context), 1)
+
+        agent_hub_firmware_button(context, false, 1)
+        guard let dashboardPixels = agent_hub_firmware_framebuffer(context) else {
+            return XCTFail("Agent Hub dashboard did not return a framebuffer")
+        }
+        let dashboard = checksum(dashboardPixels)
+        XCTAssertNotEqual(dashboard, initial)
+        XCTAssertFalse(agent_hub_firmware_selector_active(context))
+
+        agent_hub_firmware_button(context, true, 3)
+        guard let switchedPixels = agent_hub_firmware_framebuffer(context) else {
+            return XCTFail("Agent Hub provider switch did not return a framebuffer")
+        }
+        XCTAssertNotEqual(checksum(switchedPixels), dashboard)
+        XCTAssertEqual(agent_hub_firmware_active_provider(context), 2)
+
+        agent_hub_firmware_set_orientation(context, true, false)
+        XCTAssertEqual(agent_hub_firmware_frame_width(context), 240)
+        XCTAssertEqual(agent_hub_firmware_frame_height(context), 135)
+    }
+
+    func testBridgeCredentialFallsBackToInstalledLocalBridgeConfiguration() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("sticks3-bridge-credential-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let vibeStick = root.appendingPathComponent("VibeStick", isDirectory: true)
+        try FileManager.default.createDirectory(at: vibeStick, withIntermediateDirectories: true)
+        try Data("VIBE_STICK_BRIDGE_TOKEN=local-test-token\n".utf8)
+            .write(to: vibeStick.appendingPathComponent(".env"))
+
+        XCTAssertEqual(
+            BridgeCredentialStore.loadToken(
+                projectRoot: nil, applicationSupportURL: root, environment: [:]),
+            "local-test-token"
+        )
+    }
+
+    @MainActor
+    func testAgentHubProviderIDsMatchBridgeProtocol() {
+        XCTAssertEqual(
+            SimulatorModel.agentHubProviderIDs,
+            ["codex", "claude-code", "kimi-code"]
+        )
+        XCTAssertTrue(SimulatorModel.agentHubUsesCodexLiveData(providerIndex: 0))
+        XCTAssertFalse(SimulatorModel.agentHubUsesCodexLiveData(providerIndex: 1))
+        XCTAssertFalse(SimulatorModel.agentHubUsesCodexLiveData(providerIndex: 2))
     }
 
     func testCodexFirmwareSwitchesBetweenPortraitAndLandscapeFrames() {
