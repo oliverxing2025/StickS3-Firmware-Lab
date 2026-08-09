@@ -154,17 +154,28 @@ loopback bridge does not provide general network access to simulated firmware.
 
 ### Public beta build
 
-Download `StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.zip` and its `.sha256`
+Download `StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg` and its `.sha256`
 file from the
 [v0.1.0 Beta release](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.1.0-beta).
-Verify the archive before opening it:
+Verify the disk image before opening it:
 
 ```sh
-shasum -a 256 -c StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.zip.sha256
+shasum -a 256 -c StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg.sha256
 ```
 
-Unzip the archive and move `StickS3 固件实验台.app` to `Applications` or the
-Desktop.
+Open the DMG, then drag `StickS3 固件实验台.app` onto the `Applications`
+shortcut.
+
+This beta is not Apple-notarized. For the first launch:
+
+1. In Finder, open `Applications` and try to launch `StickS3 固件实验台` once.
+2. If macOS blocks it, select **Done**, then open **System Settings > Privacy &
+   Security**.
+3. Scroll to **Security**, select **Open Anyway** for StickS3 Firmware Lab,
+   authenticate if requested, and confirm **Open** in the final dialog.
+
+Only override this protection after the downloaded DMG passes the checksum
+verification above and you trust this repository as the source.
 
 For source projects, use the corresponding official download button in
 **Firmware Manager**:
@@ -176,7 +187,8 @@ Return to the app and select **Check Again** after installation.
 
 > [!WARNING]
 > This beta uses ad-hoc signing and does not have a Developer ID signature or
-> Apple notarization. macOS may require explicit approval before first launch.
+> Apple notarization. The first-launch approval above is required on systems
+> where Gatekeeper blocks the app.
 
 ### Build from source
 

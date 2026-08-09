@@ -132,14 +132,24 @@ ESP-IDF 对整个应用而言是可选扩展，但导入 ESP-IDF 工程时必须
 ### 公开测试版
 
 从 [v0.1.0 Beta 发布页](https://github.com/oliverxing2025/StickS3-Firmware-Lab/releases/tag/v0.1.0-beta)
-下载 `StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.zip` 及对应的
+下载 `StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg` 及对应的
 `.sha256` 文件，然后执行：
 
 ```sh
-shasum -a 256 -c StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.zip.sha256
+shasum -a 256 -c StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.dmg.sha256
 ```
 
-解压后将 `StickS3 固件实验台.app` 移到“应用程序”或桌面。
+打开 DMG，将 `StickS3 固件实验台.app` 拖到 `Applications`
+快捷方式上完成安装。
+
+由于该测试版尚未经过 Apple 公证，首次启动请按以下步骤操作：
+
+1. 在访达中打开“应用程序”，先尝试启动一次“StickS3 固件实验台”。
+2. 如 macOS 阻止启动，点击“完成”，然后打开“系统设置 > 隐私与安全性”。
+3. 向下滚动到“安全性”，找到被阻止的 StickS3 固件实验台，点击“仍要打开”，
+   按提示验证后，在最后的弹窗中再次点击“打开”。
+
+只有在上述 DMG 校验通过，并且确认下载来源为本项目仓库时，才应绕过该安全限制。
 
 如果要导入源码工程，请在“固件管理”中使用对应的官方下载按钮：
 
@@ -150,7 +160,7 @@ shasum -a 256 -c StickS3-Firmware-Lab-v0.1.0-beta-macOS-arm64.zip.sha256
 
 > [!WARNING]
 > 该测试版使用 ad-hoc 签名，尚未取得 Developer ID 签名或 Apple 公证。
-> macOS 首次启动时可能需要用户明确允许。
+> 如 Gatekeeper 阻止应用，必须按上述步骤完成首次启动授权。
 
 ### 从源码构建
 
